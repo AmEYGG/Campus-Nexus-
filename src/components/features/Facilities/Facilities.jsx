@@ -28,6 +28,7 @@ import {
   Zap,
   Bell
 } from 'lucide-react';
+import BookingRequestForm from '../Applications/BookingRequestForm';
 
 // Enhanced mock data with more details and imagery concepts
 const facilitiesData = {
@@ -312,202 +313,6 @@ const FacilityCard = ({ facility, onBook, showDetails }) => {
   );
 };
 
-// Booking Form Component with better styling and animation
-const BookingForm = ({ facility, isOpen, onClose, onSubmit }) => {
-  const [formData, setFormData] = useState({
-    date: '',
-    timeSlot: '',
-    purpose: '',
-    numberOfPeople: 1,
-    additionalNotes: ''
-  });
-  
-  const [formStep, setFormStep] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      onSubmit(formData);
-      setIsLoading(false);
-    }, 1500);
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <motion.div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <motion.div 
-        className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden"
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: "spring", damping: 25 }}
-      >
-        <div className="bg-blue-600 text-white p-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-semibold">{facility.name}</h3>
-            <Button variant="ghost" size="sm" onClick={onClose} className="text-white hover:bg-blue-500">
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="flex items-center gap-2 mt-2 text-blue-100">
-            <MapPin className="h-4 w-4" />
-            <span className="text-sm">{facility.location}</span>
-          </div>
-        </div>
-
-        <div className="p-1 bg-gray-100">
-          <div className="flex">
-            <div className={`flex-1 p-2 text-center ${formStep === 1 ? 'bg-white rounded-t-md' : ''}`}>
-              <span className={`text-sm font-medium ${formStep === 1 ? 'text-blue-600' : 'text-gray-500'}`}>
-                Select Time
-              </span>
-            </div>
-            <div className={`flex-1 p-2 text-center ${formStep === 2 ? 'bg-white rounded-t-md' : ''}`}>
-              <span className={`text-sm font-medium ${formStep === 2 ? 'text-blue-600' : 'text-gray-500'}`}>
-                Details
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {formStep === 1 ? (
-            <motion.div 
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium mb-2">Date</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="date"
-                    required
-                    className="w-full p-2 pl-10 border rounded-md"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    min={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Time Slot</label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <select
-                    required
-                    className="w-full p-2 pl-10 border rounded-md appearance-none"
-                    value={formData.timeSlot}
-                    onChange={(e) => setFormData({ ...formData, timeSlot: e.target.value })}
-                  >
-                    <option value="">Select a time slot</option>
-                    {facility.availableSlots.map((slot) => (
-                      <option key={slot} value={slot}>{slot}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                </div>
-              </div>
-
-              <div className="flex justify-end mt-6">
-                <Button 
-                  type="button" 
-                  onClick={() => setFormStep(2)}
-                  disabled={!formData.date || !formData.timeSlot}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  Next
-                </Button>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div 
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium mb-2">Purpose</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full p-2 border rounded-md"
-                  value={formData.purpose}
-                  onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
-                  placeholder="e.g., Group Study, Project Meeting"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Number of People</label>
-                <div className="relative">
-                  <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    max={facility.capacity}
-                    className="w-full p-2 pl-10 border rounded-md"
-                    value={formData.numberOfPeople}
-                    onChange={(e) => setFormData({ ...formData, numberOfPeople: parseInt(e.target.value) })}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-gray-500">Maximum capacity: {facility.capacity}</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Additional Notes</label>
-                <textarea
-                  className="w-full p-2 border rounded-md"
-                  rows="3"
-                  value={formData.additionalNotes}
-                  onChange={(e) => setFormData({ ...formData, additionalNotes: e.target.value })}
-                  placeholder="Any special requirements or notes..."
-                />
-              </div>
-
-              <div className="flex justify-between gap-3 mt-6">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setFormStep(1)}
-                >
-                  Back
-                </Button>
-                <Button 
-                  type="submit"
-                  disabled={isLoading}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {isLoading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                      Processing...
-                    </div>
-                  ) : (
-                    "Confirm Booking"
-                  )}
-                </Button>
-              </div>
-            </motion.div>
-          )}
-        </form>
-      </motion.div>
-    </motion.div>
-  );
-};
-
 // Facility Details Modal
 const FacilityDetails = ({ facility, isOpen, onClose, onBook }) => {
   if (!isOpen || !facility) return null;
@@ -750,11 +555,11 @@ const Facilities = () => {
                   View Availability
                 </Button>
                 <Button 
-                  variant="outline"
-                  className="border-white text-white hover:bg-white/10"
-                >
-                  My Bookings
-                </Button>
+                variant="outline"
+                className="border-blue-500 text-blue-500 hover:bg-blue-50"
+              >
+                My Bookings
+              </Button>
               </motion.div>
             </div>
             <motion.div 
@@ -1227,12 +1032,33 @@ const Facilities = () => {
       {/* Modals */}
       {selectedFacility && (
         <>
-          <BookingForm
-            facility={selectedFacility}
-            isOpen={showBookingForm}
-            onClose={() => setShowBookingForm(false)}
-            onSubmit={handleBookingSubmit}
-          />
+          {showBookingForm && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                zIndex: 50,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '1rem',
+              }}
+            >
+              <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto relative">
+                <BookingRequestForm 
+                  onClose={() => {
+                    setShowBookingForm(false);
+                    setSelectedFacility(null);
+                  }} 
+                />
+              </div>
+            </div>
+          )}
           
           <FacilityDetails
             facility={selectedFacility}

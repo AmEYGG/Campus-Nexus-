@@ -21,6 +21,7 @@ import Layout from './components/layout/Layout'
 import ComplaintReview from './components/ComplaintReview'
 import FacilityManagement from './components/features/Facilities/FacilityManagement'
 import Announcement from './components/Announcement'
+import ApplicationForm from './components/features/Applications/ApplicationForm'
 
 // Protected Route component
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -85,6 +86,7 @@ function App() {
                 <Route path="/Budget" element={<Budget />} />
                 <Route path="/facilities" element={<Facilities />} />
                 <Route path="/applications" element={<ApplicationDashboard />} />
+                <Route path="/applications/new" element={<ApplicationForm />} />
                 <Route path="/complaints" element={<ComplaintDashboard />} />
               </Routes>
             </Layout>
@@ -97,7 +99,12 @@ function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<FacultyDashboard />} />
-                <Route path="/election-admin" element={<ElectionAdministration />} />
+                <Route path="/election-administration" element={<ElectionAdministration />} />
+                <Route path="/fund-management" element={<FundManagement />} />
+                <Route path="/facilities-management" element={<FacilityManagement />} />
+                <Route path="/ApplicationManagement" element={<ApplicationManagement />} />
+                <Route path="/complaintReview" element={<ComplaintReview />} />
+                <Route path="/announcements" element={<Announcement />} />
               </Routes>
             </Layout>
           </ProtectedRoute>

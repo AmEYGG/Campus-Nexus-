@@ -40,7 +40,6 @@ import {
 } from '../../ui/alert-dialog';
 import { toast } from '../../ui/use-toast';
 import { Skeleton } from '../../ui/skeleton';
-import ApplicationForm from './ApplicationForm';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Mock data for applications
@@ -465,290 +464,169 @@ const ApplicationSkeleton = () => {
 
 // Main Applications Component
 const Applications = () => {
-  const [activeTab, setActiveTab] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showNewApplicationForm, setShowNewApplicationForm] = useState(false);
-  const [selectedType, setSelectedType] = useState(null);
-  const [viewApplication, setViewApplication] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [sortBy, setSortBy] = useState('date');
   const [applications, setApplications] = useState([]);
-  const [showNewApplicationModal, setShowNewApplicationModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [sortCriteria, setSortCriteria] = useState('date'); // 'date' or 'priority'
   const [selectedApplication, setSelectedApplication] = useState(null);
-  const [newApplication, setNewApplication] = useState({
-    type: '',
-    title: '',
-    description: '',
-    requestedAmount: '',
-    eventDate: '',
-    documents: [],
-    priority: 'normal'
-  });
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
-  // Combine all applications for the "All" tab
-  const allApplications = [
-    ...mockApplications.pending,
-    ...mockApplications.approved,
-    ...mockApplications.rejected
-  ];
+  useEffect(() => {
+    setLoading(true);
+    // Simulate fetching data
+    const fetchData = async () => {
+      try {
+        // In a real application, fetch from an API
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
+        setApplications(mockApplications.pending.concat(mockApplications.approved, mockApplications.rejected));
+        setLoading(false);
+      } catch (err) {
+        setError(err);
+        setLoading(false);
+      }
+    };
 
-  // Filter applications based on search query and active tab
-  const filteredApplications = allApplications.filter(app => {
-    const matchesSearch = 
-      app.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      app.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      app.description.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeTab === 'all') return matchesSearch;
-    
-    if (activeTab === 'pending') {
-      return matchesSearch && (app.status.toLowerCase() === 'pending' || app.status.toLowerCase() === 'under review');
-    }
-    
-    return matchesSearch && app.status.toLowerCase().includes(activeTab.toLowerCase());
-  });
+    fetchData();
+  }, []);
 
-  // Sort applications
-  const sortedApplications = [...filteredApplications].sort((a, b) => {
-    if (sortBy === 'date') {
-      return new Date(b.submittedDate) - new Date(a.submittedDate);
-    } else if (sortBy === 'urgency') {
-      const urgencyOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
-      return urgencyOrder[b.urgency] - urgencyOrder[a.urgency];
-    } else if (sortBy === 'type') {
-      return a.type.localeCompare(b.type);
-    }
-    return 0;
-  });
+  const handleSearchChange = (event) => {
+    setSearchTerm(event.target.value);
+  };
 
-  const handleNewApplicationClick = (type = null) => {
-    setSelectedType(type);
-    setShowNewApplicationForm(true);
+  const handleStatusFilterChange = (status) => {
+    setFilterStatus(status);
+  };
+
+  const handleSortChange = (criteria) => {
+    setSortCriteria(criteria);
   };
 
   const handleViewApplication = (application) => {
-    setViewApplication(application);
+    setSelectedApplication(application);
+    setIsDetailModalOpen(true);
   };
 
-  // Simulate loading data
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [activeTab, searchQuery]);
-
-  // Notification counts
-  const notificationCounts = {
-    all: allApplications.length,
-    pending: mockApplications.pending.length,
-    approved: mockApplications.approved.length,
-    rejected: mockApplications.rejected.length
+  const handleCloseDetailModal = () => {
+    setIsDetailModalOpen(false);
+    setSelectedApplication(null);
   };
 
-  const handleApplicationSubmit = (e) => {
-    e.preventDefault();
-    // Add API call to submit application
-    setApplications([...applications, { 
-      ...newApplication,
-      id: applications.length + 1,
-      status: 'pending',
-      submittedDate: new Date().toISOString().split('T')[0],
-      submittedBy: 'Current User', // Replace with actual user data
-      priority: 'normal',
-      comments: []
-    }]);
-    setShowNewApplicationModal(false);
-    setNewApplication({
-      type: '',
-      title: '',
-      description: '',
-      requestedAmount: '',
-      eventDate: '',
-      documents: [],
-      priority: 'normal'
-    });
-  };
+  // Filtering logic
+  const filteredApplications = applications.filter(app => {
+    const matchesSearch = searchTerm === '' ||
+      app.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.description.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const getPriorityBadgeColor = (priority) => {
-    switch (priority) {
-      case 'high':
-        return 'bg-red-100 text-red-800';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'normal':
-        return 'bg-blue-100 text-blue-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+    const matchesStatus = filterStatus === 'all' ||
+      app.status.toLowerCase() === filterStatus.toLowerCase();
+
+    return matchesSearch && matchesStatus;
+  });
+
+  // Sorting logic
+  const sortedApplications = [...filteredApplications].sort((a, b) => {
+    if (sortCriteria === 'date') {
+      return new Date(b.submittedDate) - new Date(a.submittedDate);
+    } else if (sortCriteria === 'priority') {
+      // Assuming urgency maps to priority levels (High > Medium > Low)
+      const urgencyOrder = { 'Urgent': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
+      return (urgencyOrder[b.urgency] || 0) - (urgencyOrder[a.urgency] || 0);
     }
-  };
-
-  const getStatusBadgeColor = (status) => {
-    switch (status) {
-      case 'approved':
-        return 'bg-green-100 text-green-800';
-      case 'rejected':
-        return 'bg-red-100 text-red-800';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getApplicationTypeIcon = (type) => {
-    switch (type) {
-      case 'event':
-        return <Calendar className="h-5 w-5" />;
-      case 'budget':
-        return <DollarSign className="h-5 w-5" />;
-      case 'sponsorship':
-        return <Award className="h-5 w-5" />;
-      default:
-        return <FileText className="h-5 w-5" />;
-    }
-  };
+    return 0; // Default no sort
+  });
 
   return (
-    <>
-      {/* Search and Filters */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-        <div className="flex flex-col md:flex-row md:items-center gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <Input
-              type="text"
-              placeholder="Search applications by subject, type, or content..."
-              className="w-full pl-10 pr-4 py-2"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  Sort by: {sortBy === 'date' ? 'Date' : sortBy === 'urgency' ? 'Priority' : 'Type'}
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setSortBy('date')}>
-                  <Calendar className="h-4 w-4 mr-2" />
-                  <span>Date</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy('urgency')}>
-                  <AlertCircle className="h-4 w-4 mr-2" />
-                  <span>Priority</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy('type')}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  <span>Type</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button variant="outline" className="flex items-center gap-2">
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-        <TabsList className="bg-white p-1 rounded-lg shadow-sm">
-          <TabsTrigger value="all" className="flex items-center gap-1">
-            All Applications
-            <Badge className="ml-1 bg-gray-200 text-gray-800">{notificationCounts.all}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="pending" className="flex items-center gap-1">
-            Pending
-            <Badge className="ml-1 bg-yellow-200 text-yellow-800">{notificationCounts.pending}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="approved" className="flex items-center gap-1">
-            Approved
-            <Badge className="ml-1 bg-green-200 text-green-800">{notificationCounts.approved}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="rejected" className="flex items-center gap-1">
-            Rejected
-            <Badge className="ml-1 bg-red-200 text-red-800">{notificationCounts.rejected}</Badge>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      {/* Applications Grid with Loading State */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[1, 2, 3, 4].map((i) => (
-            <ApplicationSkeleton key={i} />
-          ))}
+    <div className="p-6">
+      {error && <div className="text-red-500">Error loading applications: {error.message}</div>}
+      {loading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-40 w-full" />
         </div>
       ) : (
         <>
-          {sortedApplications.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {sortedApplications.map((application) => (
-                <ApplicationCard 
-                  key={application.id} 
-                  application={application} 
-                  onViewDetail={handleViewApplication}
-                />
-              ))}
+          {/* Search, Filter, Sort, Export */}
+          <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
+            <div className="relative w-full sm:w-1/3">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search applications by subject, type, or content..."
+                className="pl-9 pr-3"
+                value={searchTerm}
+                onChange={handleSearchChange}
+              />
             </div>
-          ) : (
-            <div className="text-center py-16 bg-white rounded-xl shadow-sm">
-              <div className="mx-auto w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-                <FileText className="h-12 w-12 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No applications found</h3>
-              <p className="text-gray-500 mb-6">
-                {searchQuery
-                  ? "No applications match your search criteria"
-                  : "Start by creating a new application"}
-              </p>
-              <Button
-                onClick={() => handleNewApplicationClick()}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Application
+            <div className="flex items-center space-x-4">
+              {/* Status Filter Tabs */}
+              <Tabs value={filterStatus} onValueChange={handleStatusFilterChange} className="w-full sm:w-auto">
+                <TabsList className="grid grid-cols-4 h-auto">
+                  <TabsTrigger value="all">All</TabsTrigger>
+                  <TabsTrigger value="pending">Pending</TabsTrigger>
+                  <TabsTrigger value="approved">Approved</TabsTrigger>
+                  <TabsTrigger value="rejected">Rejected</TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              {/* Sort Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center gap-2">
+                    <Filter className="h-4 w-4" />
+                    Sort by {sortCriteria === 'date' ? 'Date' : 'Priority'}
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => handleSortChange('date')}>Date</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSortChange('priority')}>Priority</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Button variant="outline" className="flex items-center gap-2">
+                <Download className="h-4 w-4" />
+                Export
               </Button>
             </div>
-          )}
+          </div>
+
+          {/* Applications List */}
+          <div className="space-y-4">
+            {sortedApplications.length === 0 ? (
+              <div className="text-center text-gray-500 py-10">
+                No applications found matching your criteria.
+              </div>
+            ) : (
+              <AnimatePresence initial={false}>
+                {sortedApplications.map(application => (
+                  <motion.div
+                    key={application.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ApplicationCard application={application} onViewDetail={handleViewApplication} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            )}
+          </div>
+
+          {/* Application Detail Modal */}
+          <ApplicationDetail
+            application={selectedApplication}
+            isOpen={isDetailModalOpen}
+            onClose={handleCloseDetailModal}
+          />
         </>
       )}
-      
-      {/* Pagination Controls */}
-      {sortedApplications.length > 0 && !isLoading && (
-        <div className="mt-8 flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            Showing <span className="font-medium">{sortedApplications.length}</span> of <span className="font-medium">{allApplications.length}</span> applications
-          </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm" disabled>Previous</Button>
-            <Button variant="outline" size="sm" disabled>Next</Button>
-          </div>
-        </div>
-      )}
-
-      {/* Application Form Modal */}
-      <ApplicationForm
-        isOpen={showNewApplicationForm}
-        onClose={() => setShowNewApplicationForm(false)}
-        initialType={selectedType}
-      />
-      
-      {/* Application Detail Dialog */}
-      <ApplicationDetail
-        application={viewApplication}
-        isOpen={!!viewApplication}
-        onClose={() => setViewApplication(null)}
-      />
-    </>
+    </div>
   );
 };
 

@@ -21,14 +21,17 @@ import {
   TrendingUp,
   Activity,
   Shield,
-  Medal
+  Medal,
+  Plus
 } from 'lucide-react';
+import CandidateApplicationForm from './CandidateApplicationForm';
 
 const ElectionDashboard = () => {
   const [activeElection, setActiveElection] = useState('student-council');
   const [timeRemaining, setTimeRemaining] = useState({ days: 3, hours: 14, minutes: 32 });
   const [liveUpdate, setLiveUpdate] = useState(true);
   const navigate = useNavigate();
+  const [isCandidateFormOpen, setIsCandidateFormOpen] = useState(false);
 
   // Simulate live updates
   useEffect(() => {
@@ -47,6 +50,10 @@ const ElectionDashboard = () => {
     localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('userRole');
     navigate('/login');
+  };
+
+  const handleCloseCandidateForm = () => {
+    setIsCandidateFormOpen(false);
   };
 
   const elections = [
@@ -145,7 +152,7 @@ const ElectionDashboard = () => {
                   </div>
                 </div>
               </div>
-              <div className="text-right space-y-3">
+              <div className="text-right space-y-4 flex flex-col items-end">
                 <div className="bg-white bg-opacity-15 backdrop-blur-sm rounded-2xl p-6">
                   <div className="text-4xl font-bold">38%</div>
                   <div className="text-blue-100 text-sm font-medium">Voter Turnout</div>
@@ -153,6 +160,13 @@ const ElectionDashboard = () => {
                     <div className="bg-gradient-to-r from-green-400 to-green-500 h-2 rounded-full w-9/24"></div>
                   </div>
                 </div>
+                <button
+                  onClick={() => setIsCandidateFormOpen(true)}
+                  className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-blue-700 bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
+                >
+                  <Plus className="h-5 w-5 mr-2" />
+                  Apply to be a Candidate
+                </button>
               </div>
             </div>
           </div>
@@ -491,6 +505,30 @@ const ElectionDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Candidate Application Form Modal */}
+      {isCandidateFormOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto relative">
+            <CandidateApplicationForm onClose={handleCloseCandidateForm} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // Added for navigation
 import { 
   User, 
   Mail, 
@@ -10,8 +11,10 @@ import {
   Building, 
   CheckCircle
 } from 'lucide-react';
+import { authService } from '../services/auth.service';
 
 const Signup = () => {
+  const navigate = useNavigate(); // Initialize useNavigate
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -35,14 +38,12 @@ const Signup = () => {
       [name]: value
     }));
 
-    // Update password strength when password changes
     if (name === 'password') {
       calculatePasswordStrength(value);
     }
   };
 
   const calculatePasswordStrength = (password) => {
-    // Simple password strength calculation
     let strength = 0;
     if (password.length >= 8) strength += 1;
     if (/[A-Z]/.test(password)) strength += 1;
@@ -56,7 +57,6 @@ const Signup = () => {
     setError('');
     setLoading(true);
 
-    // Basic validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       setLoading(false);
@@ -64,22 +64,43 @@ const Signup = () => {
     }
 
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 800));
+      const registrationData = {
+        email: formData.email,
+        password: formData.password,
+        name: `${formData.firstName} ${formData.lastName}`,
+        role: formData.role,
+        // Always include department, will be null/empty string if not entered
+        department: formData.department || null,
+        // Conditionally add role-specific IDs
+        ...(formData.role === 'student' && { studentId: formData.studentId }),
+        ...(formData.role === 'faculty' && { facultyId: formData.facultyId }),
+        
+      };
       
-      if (formData.email && formData.password) {
-        // In a real app, you'd send this data to your backend
-        console.log('User registered:', formData);
-        setIsRegistered(true);
-      }
+      // Supabase Auth registration using the service
+      const user = await authService.register(registrationData);
+      
+      console.log('User registered successfully:', user);
+      setIsRegistered(true);
+
+      // Optional: Automatically navigate to login after a few seconds
+      // setTimeout(() => {
+      //   navigate('/login');
+      // }, 5000);
+
     } catch (err) {
-      setError('Registration failed. Please try again.');
+      console.error('Registration failed:', err);
+      if (err.message) {
+         setError(`Registration failed: ${err.message}`);
+      } else {
+         setError('Registration failed. Please try again.');
+      }
+     
     } finally {
       setLoading(false);
     }
   };
 
-  // Success screen after registration
   if (isRegistered) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4">
@@ -88,12 +109,11 @@ const Signup = () => {
             <CheckCircle className="w-8 h-8 text-green-500" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Registration Successful!</h2>
-          <p className="text-gray-600">Your account has been created successfully.</p>
+          <p className="text-gray-600">
+            Your account has been created. Please check your email to verify your account before logging in.
+          </p>
           <button 
-            onClick={() => {
-              // In a real app, this would navigate to login
-              setIsRegistered(false);
-            }}
+            onClick={() => navigate('/login')} // Navigate to login
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Go to Login
@@ -103,7 +123,6 @@ const Signup = () => {
     );
   }
 
-  // Role-based color and icon configurations
   const getRoleConfig = () => {
     switch (formData.role) {
       case 'admin':
@@ -145,11 +164,9 @@ const Signup = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4">
-      {/* Background decorative elements */}
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-r from-blue-500 to-purple-600 transform -skew-y-6 -translate-y-24 opacity-10"></div>
       
       <div className="max-w-lg w-full space-y-6 bg-white p-8 sm:p-10 rounded-2xl shadow-xl relative overflow-hidden">
-        {/* Decorative Elements */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-bl-full opacity-70"></div>
         <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-blue-100 to-purple-100 rounded-tr-full opacity-70"></div>
         
@@ -176,7 +193,6 @@ const Signup = () => {
           )}
           
           <div className="space-y-4">
-            {/* Name Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
@@ -212,7 +228,6 @@ const Signup = () => {
               </div>
             </div>
             
-            {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
               <div className="relative">
@@ -232,7 +247,6 @@ const Signup = () => {
               </div>
             </div>
             
-            {/* Role Selection */}
             <div>
               <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">I am a</label>
               <select
@@ -246,14 +260,13 @@ const Signup = () => {
                 <option value="faculty">Faculty Member</option>
                 <option value="admin">Administrator</option>
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 pt-6">
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 pt-6"> {/* Adjusted pt-6 for label */}
                 <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
                 </svg>
               </div>
             </div>
 
-            {/* Role-specific Fields */}
             {formData.role === 'student' && (
               <div>
                 <label htmlFor="studentId" className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
@@ -276,68 +289,44 @@ const Signup = () => {
             )}
 
             {formData.role === 'faculty' && (
-              <>
-                <div>
-                  <label htmlFor="facultyId" className="block text-sm font-medium text-gray-700 mb-1">Faculty ID</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Briefcase className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <input
-                      id="facultyId"
-                      name="facultyId"
-                      type="text"
-                      required
-                      className="pl-10 appearance-none block w-full px-3 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter your faculty ID"
-                      value={formData.facultyId}
-                      onChange={handleChange}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Building className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <input
-                      id="department"
-                      name="department"
-                      type="text"
-                      required
-                      className="pl-10 appearance-none block w-full px-3 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter your department"
-                      value={formData.department}
-                      onChange={handleChange}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {formData.role === 'admin' && (
               <div>
-                <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <label htmlFor="facultyId" className="block text-sm font-medium text-gray-700 mb-1">Faculty ID</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Building className="h-5 w-5 text-gray-400" />
+                    <Briefcase className="h-5 w-5 text-gray-400" />
                   </div>
                   <input
-                    id="department"
-                    name="department"
+                    id="facultyId"
+                    name="facultyId"
                     type="text"
                     required
                     className="pl-10 appearance-none block w-full px-3 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter your department"
-                    value={formData.department}
+                    placeholder="Enter your faculty ID"
+                    value={formData.facultyId}
                     onChange={handleChange}
                   />
                 </div>
               </div>
             )}
 
-            {/* Password Fields */}
+            <div>
+              <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Building className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="department"
+                  name="department"
+                  type="text"
+                  className="pl-10 appearance-none block w-full px-3 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter your department"
+                  value={formData.department}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <div className="relative">
@@ -355,7 +344,6 @@ const Signup = () => {
                   onChange={handleChange}
                 />
               </div>
-              {/* Password strength indicator */}
               {formData.password && (
                 <div className="mt-2">
                   <div className="flex space-x-1">
@@ -364,13 +352,10 @@ const Signup = () => {
                         key={i} 
                         className={`h-1 flex-1 rounded-full ${
                           i < passwordStrength 
-                            ? passwordStrength === 1 
-                              ? 'bg-red-500' 
-                              : passwordStrength === 2 
-                                ? 'bg-yellow-500' 
-                                : passwordStrength === 3 
-                                  ? 'bg-blue-500' 
-                                  : 'bg-green-500'
+                            ? passwordStrength === 1 ? 'bg-red-500' 
+                            : passwordStrength === 2 ? 'bg-yellow-500' 
+                            : passwordStrength === 3 ? 'bg-blue-500' 
+                            : 'bg-green-500'
                             : 'bg-gray-200'
                         }`}
                       ></div>
@@ -452,7 +437,7 @@ const Signup = () => {
           <p className="text-sm text-gray-600">
             Already have an account?{' '}
             <button
-              onClick={() => console.log('Navigate to login')} // In a real app, this would navigate to login
+              onClick={() => navigate('/login')} // Navigate to login
               className={`font-medium ${roleConfig.accent} hover:underline transition-colors duration-150`}
             >
               Sign in instead

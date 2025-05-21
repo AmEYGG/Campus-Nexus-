@@ -140,7 +140,21 @@ const FacilityBooking = () => {
         </p>
       </div>
 
-      {/* Calendar Navigation */}
+      <div className="bg-blue-600 text-white py-16 px-8 rounded-lg mb-8">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-3xl font-bold mb-4">Campus Facilities</h2>
+          <p className="text-blue-100 mb-8">Book study rooms, labs, and other campus resources</p>
+          <div className="flex space-x-4">
+            <button className="px-6 py-3 bg-white text-blue-700 font-semibold rounded-md shadow hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2">
+              View Availability
+            </button>
+            <button className="px-6 py-3 border border-white text-white font-semibold rounded-md shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2">
+              Book a Facility
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between mb-6">
         <button
           onClick={() => setWeekStart(addDays(weekStart, -7))}
@@ -161,7 +175,6 @@ const FacilityBooking = () => {
 
       <WeekView />
 
-      {/* Facilities Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {facilities.map((facility) => (
           <motion.div
@@ -173,7 +186,6 @@ const FacilityBooking = () => {
             onClick={() => setSelectedFacility(facility)}
           >
             <div className="h-48 bg-gray-200">
-              {/* Replace with actual image */}
               <div className="w-full h-full bg-gray-300 flex items-center justify-center">
                 <span className="text-gray-500">{facility.name}</span>
               </div>
@@ -195,7 +207,6 @@ const FacilityBooking = () => {
         ))}
       </div>
 
-      {/* Time Slots */}
       {selectedFacility && (
         <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
           <h3 className="font-semibold text-gray-900 mb-4">Available Time Slots</h3>
@@ -223,7 +234,6 @@ const FacilityBooking = () => {
         </div>
       )}
 
-      {/* Booking Form */}
       {selectedFacility && selectedTimeSlot && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}

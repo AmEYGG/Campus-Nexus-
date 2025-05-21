@@ -8,13 +8,16 @@ import {
   AlertTriangle,
   Calendar,
   Users,
-  TrendingUp
+  TrendingUp,
+  Plus
 } from 'lucide-react';
 import Applications from './Applications';
 import ApplicationNotifications from './ApplicationNotifications';
 import { calculatePriority, sortByPriority } from './ApplicationPriority';
+import ApplicationForm from './ApplicationForm';
 
 const ApplicationDashboard = () => {
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [applications, setApplications] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -81,6 +84,12 @@ const ApplicationDashboard = () => {
     </motion.div>
   );
 
+  const handleFormClose = () => {
+    setIsFormOpen(false);
+    // Optional: Refetch applications after form is closed
+    // fetchApplications(); 
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -91,7 +100,16 @@ const ApplicationDashboard = () => {
               <h1 className="text-2xl font-bold text-gray-900">Application Dashboard</h1>
               <p className="mt-1 text-gray-600">Monitor and manage all applications</p>
             </div>
-            <ApplicationNotifications applications={applications} />
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setIsFormOpen(true)}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                New Application
+              </button>
+              <ApplicationNotifications applications={applications} />
+            </div>
           </div>
         </div>
       </div>
@@ -137,6 +155,30 @@ const ApplicationDashboard = () => {
           <Applications />
         </div>
       </div>
+
+      {/* Application Form Modal */}
+      {isFormOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto relative">
+            <ApplicationForm onClose={handleFormClose} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

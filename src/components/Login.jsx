@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { authService } from '../services/auth.service';
 
 const Login = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    role: 'student' // Default role
+    // role is only for UI styling here, actual role will come from user profile
+    role: 'student' 
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,36 +28,52 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 800));
+      const loginResponse = await authService.login(formData.email, formData.password);
       
-      if (formData.email && formData.password) {
-        localStorage.setItem('userRole', formData.role);
-        localStorage.setItem('isAuthenticated', 'true');
-        
-        // Redirect based on role
-        switch (formData.role) {
-          case 'admin':
-            navigate('/admin');
-            break;
-          case 'faculty':
-            navigate('/faculty');
-            break;
-          case 'student':
-            navigate('/student');
-            break;
-          default:
-            navigate('/student');
-        }
+      console.log('User logged in successfully:', loginResponse);
+      
+      // Get role from the user_metadata stored during signup
+      const userRole = loginResponse.userProfile?.role;
+
+      if (!userRole) {
+        console.error('Login successful, but user role not found in profile metadata.');
+        setError('Login failed: User data incomplete. Please contact support.');
+        // Optionally log the user out if state is inconsistent
+        // await authService.logout(); 
+        setLoading(false);
+        return;
       }
+      
+      // Redirect based on the role fetched from metadata
+      switch (userRole) {
+        case 'admin':
+          navigate('/admin');
+          break;
+        case 'faculty':
+          navigate('/faculty');
+          break;
+        case 'student':
+          navigate('/student');
+          break;
+        default:
+          console.warn(`Unknown role "${userRole}" found for user metadata. Defaulting to student dashboard.`);
+          navigate('/student'); // Fallback or error page
+      }
+
     } catch (err) {
-      setError('Invalid credentials. Please try again.');
+      console.error('Login failed:', err);
+      if (err.message) {
+         setError(`Login failed: ${err.message}`);
+      } else {
+         setError('Invalid credentials or user data issue. Please try again.');
+      }
+     
     } finally {
       setLoading(false);
     }
   };
 
-  // Role-based color configurations
+  // Role-based color configurations (driven by dropdown for UI pre-login)
   const getRoleColors = () => {
     switch (formData.role) {
       case 'admin':
@@ -69,10 +87,6 @@ const Login = () => {
           accent: 'text-emerald-600'
         };
       case 'student':
-        return {
-          button: 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500',
-          accent: 'text-blue-600'
-        };
       default:
         return {
           button: 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500',
@@ -88,7 +102,6 @@ const Login = () => {
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-r from-blue-500 to-purple-600 transform -skew-y-6 -translate-y-24 z-0 opacity-10"></div>
       
       <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-2xl shadow-xl z-10 relative overflow-hidden">
-        {/* Decorative Elements */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-bl-full opacity-70"></div>
         <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-blue-100 to-purple-100 rounded-tr-full opacity-70"></div>
         
@@ -127,6 +140,7 @@ const Login = () => {
                   id="email"
                   name="email"
                   type="email"
+                  autoComplete="email"
                   required
                   className="pl-10 appearance-none block w-full px-3 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-150 ease-in-out"
                   placeholder="you@example.com"
@@ -146,6 +160,7 @@ const Login = () => {
                   id="password"
                   name="password"
                   type="password"
+                  autoComplete="current-password"
                   required
                   className="pl-10 appearance-none block w-full px-3 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-150 ease-in-out"
                   placeholder="••••••••"
@@ -161,7 +176,7 @@ const Login = () => {
             </div>
             
             <div className="relative">
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">I am a</label>
+              <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">Select your role (for UI)</label>
               <select
                 id="role"
                 name="role"
@@ -216,7 +231,7 @@ const Login = () => {
           </div>
         </form>
         
-        <div className="relative">
+        <div className="relative mt-6"> {/* Added mt-6 for spacing */}
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-gray-200"></div>
           </div>
@@ -225,12 +240,12 @@ const Login = () => {
           </div>
         </div>
         
-        <div className="grid grid-cols-3 gap-3">
+        <div className="mt-6 grid grid-cols-3 gap-3"> {/* Added mt-6 for spacing */}
           <button
             type="button"
             className="inline-flex justify-center items-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"> {/* Facebook Icon */}
               <path d="M12.0003 2C6.47731 2 2.00031 6.477 2.00031 12C2.00031 16.991 5.65731 21.128 10.4373 21.879V14.89H7.89931V12H10.4373V9.797C10.4373 7.291 11.9323 5.907 14.2153 5.907C15.3103 5.907 16.4543 6.102 16.4543 6.102V8.562H15.1913C13.9513 8.562 13.5633 9.333 13.5633 10.124V12H16.3363L15.8933 14.89H13.5633V21.879C18.3433 21.129 22.0003 16.99 22.0003 12C22.0003 6.477 17.5233 2 12.0003 2Z" />
             </svg>
           </button>
@@ -238,7 +253,7 @@ const Login = () => {
             type="button"
             className="inline-flex justify-center items-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"> {/* Google Icon */}
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
               <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
@@ -249,13 +264,13 @@ const Login = () => {
             type="button"
             className="inline-flex justify-center items-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            <svg className="h-5 w-5 text-black" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5 text-black" fill="currentColor" viewBox="0 0 24 24"> {/* Apple Icon */}
               <path d="M13.503 15.424c-1.2.923-2.576 1.037-3.118 1.059-.654-.022-2.606-.045-3.978-1.976-1.047-1.423-1.644-3.68-1.468-5.843.187-2.256 1.17-4.053 2.643-4.955 1.136-.704 2.14-.612 3.342-.404.603.107 1.888.404 2.69 1.245-2.41.485-2.006 2.872-.443 3.432 1.578.561 3.13-.656 3.578-1.93.448-1.275-.02-2.903-1.99-3.526-.637-.22-1.443-.353-2.531-.391C9.973 1.96 6.71 5.145 6.285 9.776c-.052 2.99 1.157 6.045 3.516 7.1 2.359 1.057 5.676.182 7.213-1.920.325-.434 1.43-2.073.722-3.597-.707-1.525-2.237-2.27-4.233-.934z" />
             </svg>
           </button>
         </div>
         
-        <div className="text-center pt-2">
+        <div className="text-center pt-2 mt-6"> {/* Added mt-6 for spacing */}
           <p className="text-sm text-gray-600">
             Don't have an account?{' '}
             <button

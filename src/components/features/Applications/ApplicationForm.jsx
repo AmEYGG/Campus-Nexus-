@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '../../ui/dialog';
-import { Button } from '../../ui/button';
+import { toast } from 'react-hot-toast';
 import {
   Form,
   FormControl,
@@ -14,18 +7,37 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from '../../ui/form';
 import { Input } from '../../ui/input';
 import { Select } from '../../ui/select';
 import { Textarea } from '../../ui/textarea';
 import { useForm } from 'react-hook-form';
-import { Calendar, FileText, Users, X, Upload, Paperclip } from 'lucide-react';
+import { Calendar, FileText, Users, X, Upload, Paperclip, AlertCircle, Clock, AlertTriangle } from 'lucide-react';
+import { Button } from '../../ui/button';
+import * as z from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 
-const ApplicationForm = ({ isOpen, onClose, initialType = null }) => {
+// Define validation schema
+const formSchema = z.object({
+  type: z.string().min(1, 'Please select an application type'),
+  subject: z.string().min(5, 'Subject must be at least 5 characters'),
+  priority: z.enum(['low', 'medium', 'high', 'urgent'], {
+    required_error: 'Please select a priority level',
+  }),
+  description: z.string().min(20, 'Description must be at least 20 characters'),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  documents: z.array(z.any()).optional(),
+  additionalInfo: z.string().optional(),
+});
+
+const ApplicationForm = ({ onClose }) => {
   const [step, setStep] = useState(1);
   const form = useForm({
+    resolver: zodResolver(formSchema),
     defaultValues: {
-      type: initialType || '',
+      type: '',
       subject: '',
       priority: 'medium',
       description: '',
@@ -63,36 +75,94 @@ const ApplicationForm = ({ isOpen, onClose, initialType = null }) => {
     },
   ];
 
+  const priorityLevels = [
+    {
+      value: 'low',
+      label: 'Low Priority',
+      description: 'Non-urgent requests that can be processed within 2 weeks',
+      icon: Clock,
+      color: 'bg-green-100 text-green-600',
+      borderColor: 'border-green-200',
+    },
+    {
+      value: 'medium',
+      label: 'Medium Priority',
+      description: 'Standard requests that should be processed within 1 week',
+      icon: AlertCircle,
+      color: 'bg-blue-100 text-blue-600',
+      borderColor: 'border-blue-200',
+    },
+    {
+      value: 'high',
+      label: 'High Priority',
+      description: 'Urgent requests that need attention within 3-4 days',
+      icon: AlertTriangle,
+      color: 'bg-orange-100 text-orange-600',
+      borderColor: 'border-orange-200',
+    },
+    {
+      value: 'urgent',
+      label: 'Urgent Priority',
+      description: 'Critical requests that require immediate attention (within 24-48 hours)',
+      icon: AlertTriangle,
+      color: 'bg-red-100 text-red-600',
+      borderColor: 'border-red-200',
+    },
+  ];
+
   const steps = [
     { id: 1, name: 'Basic Info' },
     { id: 2, name: 'Details' },
     { id: 3, name: 'Documents' },
   ];
 
-  const onSubmit = (data) => {
+  const onSubmit = async (data) => {
     if (step < steps.length) {
+      // Validate current step before proceeding
+      const currentStepFields = step === 1 
+        ? ['type', 'subject', 'priority']
+        : step === 2 
+        ? ['description', 'startDate', 'endDate']
+        : ['documents'];
+
+      const isValid = await form.trigger(currentStepFields);
+      if (!isValid) {
+        toast.error('Please fill in all required fields correctly');
+        return;
+      }
       setStep(step + 1);
     } else {
-      console.log('Form submitted:', data);
-      onClose();
+      try {
+        // TODO: Replace with actual API call
+        console.log('Form submitted:', data);
+        toast.success('Application submitted successfully!');
+        onClose();
+      } catch (error) {
+        toast.error('Failed to submit application. Please try again.');
+        console.error('Error submitting application:', error);
+      }
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader className="bg-teal-500 text-white p-6 -mt-6 -mx-6 mb-6 flex items-start justify-between">
-          <div>
-            <DialogTitle className="text-2xl font-semibold mb-2">New Application</DialogTitle>
-            <p className="text-teal-50">Please fill in the required information</p>
-          </div>
-          <button onClick={onClose} className="text-teal-50 hover:text-white">
-            <X className="h-6 w-6" />
-          </button>
-        </DialogHeader>
+    <div className="relative">
+      {/* Modal Header */}
+      <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">New Application</h2>
+          <p className="text-sm text-gray-500">Please fill in the required information</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-500 focus:outline-none"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      </div>
 
-        {/* Progress Steps */}
-        <div className="flex justify-between mb-8">
+      {/* Progress Steps */}
+      <div className="px-6 py-4 border-b">
+        <div className="flex justify-between">
           {steps.map((s) => (
             <div
               key={s.id}
@@ -111,7 +181,10 @@ const ApplicationForm = ({ isOpen, onClose, initialType = null }) => {
             </div>
           ))}
         </div>
+      </div>
 
+      {/* Form Content */}
+      <div className="p-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {step === 1 && (
@@ -155,24 +228,44 @@ const ApplicationForm = ({ isOpen, onClose, initialType = null }) => {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="priority"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Priority Level</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
-                        <option value="low">Low Priority</option>
-                        <option value="medium">Medium Priority</option>
-                        <option value="high">High Priority</option>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="space-y-4">
+                  <FormLabel>Priority Level</FormLabel>
+                  <div className="grid grid-cols-1 gap-4">
+                    {priorityLevels.map((priority) => {
+                      const Icon = priority.icon;
+                      return (
+                        <div
+                          key={priority.value}
+                          className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                            form.watch('priority') === priority.value
+                              ? `${priority.borderColor} bg-opacity-10`
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                          onClick={() => form.setValue('priority', priority.value)}
+                        >
+                          <div className="flex items-start">
+                            <div className={`p-2 rounded-lg ${priority.color} mr-3`}>
+                              <Icon className="h-5 w-5" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-medium text-gray-900">{priority.label}</h4>
+                                {form.watch('priority') === priority.value && (
+                                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                                )}
+                              </div>
+                              <p className="mt-1 text-sm text-gray-500">{priority.description}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <FormMessage />
+                  <FormDescription>
+                    Select the priority level based on the urgency of your request. Higher priority requests will be processed faster but should only be used for truly urgent matters.
+                  </FormDescription>
+                </div>
               </>
             )}
 
@@ -286,33 +379,36 @@ const ApplicationForm = ({ isOpen, onClose, initialType = null }) => {
               </div>
             )}
 
-            <DialogFooter>
-              <div className="flex justify-between w-full">
+            {/* Navigation Buttons */}
+            <div className="flex justify-between pt-6 border-t">
+              {step > 1 ? (
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => {
-                    if (step > 1) {
-                      setStep(step - 1);
-                    } else {
-                      onClose();
-                    }
-                  }}
+                  onClick={() => setStep(step - 1)}
                 >
-                  {step === 1 ? 'Cancel' : 'Back'}
+                  Previous
                 </Button>
-                <Button 
-                  type="submit"
-                  className="bg-teal-500 hover:bg-teal-600"
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onClose}
                 >
-                  {step === steps.length ? 'Submit Application' : 'Next'}
+                  Cancel
                 </Button>
-              </div>
-            </DialogFooter>
+              )}
+              <Button 
+                type="submit"
+                className={form.watch('priority') === 'urgent' ? 'bg-red-600 hover:bg-red-700' : ''}
+              >
+                {step === steps.length ? 'Submit Application' : 'Next'}
+              </Button>
+            </div>
           </form>
         </Form>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 };
 

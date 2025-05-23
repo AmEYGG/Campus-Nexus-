@@ -211,10 +211,8 @@ const ElectionDashboard = () => {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-
-    const database = getDatabase();
-    const notificationsRef = ref(database, `notifications/${user.uid}`);
+    if (!user) return;    const database = getDatabase();
+    const notificationsRef = ref(database, `users/${user.authUser.uid}/notifications`);
     const unsubscribeNotificationsDisplay = onValue(notificationsRef, (snapshot) => {
       const notificationsData = [];
       if (snapshot.exists()) {
@@ -338,11 +336,11 @@ const ElectionDashboard = () => {
 
   const markNotificationAsRead = async (notificationId) => {
     if (!user || !notificationId) return;
-    
-    try {
+      try {
       const database = getDatabase();
-      const notificationRef = ref(database, `notifications/${user.uid}/${notificationId}`);
+      const notificationRef = ref(database, `users/${user.authUser.uid}/notifications/${notificationId}`);
       await update(notificationRef, { read: true });
+      toast.success('Notification marked as read');
     } catch (error) {
       console.error('Error marking notification as read:', error);
       toast.error('Could not update notification status');
@@ -354,10 +352,9 @@ const ElectionDashboard = () => {
     
     try {
       const database = getDatabase();
-      const updates = {};
-      notifications.forEach(notification => {
+      const updates = {};      notifications.forEach(notification => {
         if (!notification.read) {
-          updates[`notifications/${user.uid}/${notification.id}/read`] = true;
+          updates[`users/${user.authUser.uid}/notifications/${notification.id}/read`] = true;
         }
       });
       

@@ -56,15 +56,7 @@ const StudentMenu = () => {
         </nav>
       </div>
 
-      {/* Settings at the bottom */}
-      <div className="absolute bottom-0 w-full border-t border-gray-200">
-        <Link
-          to="/student/settings"
-          className="flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 border-b border-gray-200"
-        >
-          <span className="mr-3 text-gray-500"><Settings size={20} /></span>
-          Settings
-        </Link>
+      {/* Settings at the bottom */}      <div className="absolute bottom-0 w-full border-t border-gray-200">
         <button
           onClick={handleLogout}
           className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100"

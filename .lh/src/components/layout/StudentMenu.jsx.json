@@ -1,0 +1,18 @@
+{
+    "sourceFile": "src/components/layout/StudentMenu.jsx",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1748025227375,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1748025227375,
+            "name": "Commit-0",
+            "content": "import React from 'react';\r\nimport { Link, useNavigate } from 'react-router-dom';\r\nimport {\r\n  Home,\r\n  Vote,\r\n  Clock,\r\n  Building,\r\n  FileText,\r\n  AlertCircle,\r\n  Settings,\r\n  LogOut\r\n} from 'lucide-react';\r\n\r\nconst StudentMenu = () => {\r\n  const navigate = useNavigate();\r\n\r\n  const handleLogout = () => {\r\n    localStorage.removeItem('isAuthenticated');\r\n    localStorage.removeItem('userRole');\r\n    navigate('/login');\r\n  };\r\n\r\n  const menuItems = [\r\n    // Main Navigation\r\n    { id: 'dashboard', icon: <Home size={20} />, label: 'Dashboard', link: '/student' },\r\n    { id: 'elections', icon: <Vote size={20} />, label: 'Elections', link: '/student/elections' },\r\n    { id: 'budget', icon: <Clock size={20} />, label: 'Budget', link: '/student/budget' },\r\n    { id: 'facilities', icon: <Building size={20} />, label: 'Facilities', link: '/student/facilities' },\r\n    { id: 'applications', icon: <FileText size={20} />, label: 'Applications', link: '/student/applications' },\r\n    { id: 'complaints', icon: <AlertCircle size={20} />, label: 'Complaints', link: '/student/complaints' }\r\n  ];\r\n\r\n  return (\r\n    <div className=\"w-64 bg-white border-r border-gray-200 fixed h-full overflow-y-auto\">\r\n      {/* Logo */}\r\n      <div className=\"p-4 border-b border-gray-200\">\r\n        <Link to=\"/\" className=\"flex items-center\">\r\n          <span className=\"text-xl font-semibold text-blue-600\">Campus Nexus</span>\r\n        </Link>\r\n      </div>\r\n\r\n      {/* Main Menu */}\r\n      <div className=\"py-4\">\r\n        <p className=\"px-4 text-xs font-medium text-gray-500 uppercase tracking-wider\">STUDENT PORTAL</p>\r\n        <nav className=\"mt-2\">\r\n          {menuItems.map((item) => (\r\n            <Link\r\n              key={item.id}\r\n              to={item.link}\r\n              className=\"flex items-center px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100\"\r\n            >\r\n              <span className=\"mr-3 text-gray-500\">{item.icon}</span>\r\n              {item.label}\r\n            </Link>\r\n          ))}\r\n        </nav>\r\n      </div>\r\n\r\n      {/* Settings at the bottom */}      <div className=\"absolute bottom-0 w-full border-t border-gray-200\">\r\n        <button\r\n          onClick={handleLogout}\r\n          className=\"w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100\"\r\n        >\r\n          <span className=\"mr-3 text-gray-500\"><LogOut size={20} /></span>\r\n          Logout\r\n        </button>\r\n      </div>\r\n    </div>\r\n  );\r\n};\r\n\r\nexport default StudentMenu;"
+        }
+    ]
+}

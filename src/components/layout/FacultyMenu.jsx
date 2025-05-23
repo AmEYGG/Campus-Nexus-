@@ -36,11 +36,7 @@ const FacultyMenu = () => {
     { id: 'complaints', icon: <MessageSquare size={20} />, label: 'Complaint Review', link: '/faculty/complaints/review' },
     { id: 'announcements', icon: <Megaphone size={20} />, label: 'Announcements', link: '/faculty/announcements' }
   ];
-
   const utilityNavItems = [
-    { id: 'notifications', icon: <Bell size={20} />, label: 'Notifications', link: '/faculty/notifications' },
-    { id: 'profile', icon: <User size={20} />, label: 'Profile', link: '/faculty/profile' },
-    { id: 'settings', icon: <Settings size={20} />, label: 'Settings', link: '/faculty/settings' },
     { id: 'logout', icon: <LogOut size={20} />, label: 'Log Out', onClick: handleLogout }
   ];
 

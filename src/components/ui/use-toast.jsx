@@ -8,6 +8,8 @@ const ToastContext = createContext({
   removeToast: () => {},
 });
 
+let toastFn;
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
@@ -22,6 +24,9 @@ export function ToastProvider({ children }) {
   const removeToast = (id) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   };
+
+  // Store the addToast function in our module-level variable
+  toastFn = addToast;
 
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
@@ -74,6 +79,9 @@ export function useToast() {
 }
 
 export function toast(props) {
-  const addToast = useToast();
-  addToast(props);
+  if (!toastFn) {
+    console.warn('Toast was called before ToastProvider was initialized');
+    return;
+  }
+  toastFn(props);
 } 

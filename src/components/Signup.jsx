@@ -11,7 +11,7 @@ import {
   Building, 
   CheckCircle
 } from 'lucide-react';
-import { authService } from '../services/auth.service';
+import { firebaseAuthService } from '../services/firebaseAuth.service';
 
 const Signup = () => {
   const navigate = useNavigate(); // Initialize useNavigate
@@ -67,18 +67,16 @@ const Signup = () => {
       const registrationData = {
         email: formData.email,
         password: formData.password,
-        name: `${formData.firstName} ${formData.lastName}`,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
         role: formData.role,
-        // Always include department, will be null/empty string if not entered
         department: formData.department || null,
-        // Conditionally add role-specific IDs
         ...(formData.role === 'student' && { studentId: formData.studentId }),
         ...(formData.role === 'faculty' && { facultyId: formData.facultyId }),
-        
       };
       
-      // Supabase Auth registration using the service
-      const user = await authService.register(registrationData);
+      // Firebase Auth registration using the service
+      const user = await firebaseAuthService.register(registrationData);
       
       console.log('User registered successfully:', user);
       setIsRegistered(true);
@@ -91,11 +89,10 @@ const Signup = () => {
     } catch (err) {
       console.error('Registration failed:', err);
       if (err.message) {
-         setError(`Registration failed: ${err.message}`);
+        setError(err.message);
       } else {
-         setError('Registration failed. Please try again.');
+        setError('Registration failed. Please try again.');
       }
-     
     } finally {
       setLoading(false);
     }

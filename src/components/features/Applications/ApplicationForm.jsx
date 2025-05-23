@@ -7,39 +7,35 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormDescription,
 } from '../../ui/form';
 import { Input } from '../../ui/input';
-import { Select } from '../../ui/select';
 import { Textarea } from '../../ui/textarea';
 import { useForm } from 'react-hook-form';
 import { Calendar, FileText, Users, X, Upload, Paperclip, AlertCircle, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import * as z from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { database } from '@/config/firebase';
+import { ref, push, set, get, serverTimestamp } from 'firebase/database';
+import { useAuthContext } from '@/providers/AuthProvider';
+import { createApplicationNotification } from '../../../utils/notificationUtils';
 
-// Define validation schema
-const formSchema = z.object({
-  type: z.string().min(1, 'Please select an application type'),
-  subject: z.string().min(5, 'Subject must be at least 5 characters'),
-  priority: z.enum(['low', 'medium', 'high', 'urgent'], {
-    required_error: 'Please select a priority level',
-  }),
-  description: z.string().min(20, 'Description must be at least 20 characters'),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  documents: z.array(z.any()).optional(),
-  additionalInfo: z.string().optional(),
-});
+const CLOUDINARY_UPLOAD_PRESET = 'CampusNexus'; // Create this in your Cloudinary settings
+const CLOUDINARY_CLOUD_NAME = 'dc3pfqjlh'; // Replace with your cloud name
 
 const ApplicationForm = ({ onClose }) => {
+  const { user } = useAuthContext();
   const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef(null);
+
   const form = useForm({
-    resolver: zodResolver(formSchema),
     defaultValues: {
       type: '',
       subject: '',
-      priority: 'medium',
+      priority: '',
       description: '',
       startDate: '',
       endDate: '',
@@ -54,24 +50,28 @@ const ApplicationForm = ({ onClose }) => {
       title: 'Leave Request',
       icon: Calendar,
       color: 'bg-teal-50 text-teal-600',
+      category: 'academic'
     },
     {
       id: 'course-change',
       title: 'Course Change',
       icon: FileText,
-      color: 'bg-teal-50 text-teal-600',
+      color: 'bg-blue-50 text-blue-600',
+      category: 'academic'
     },
     {
       id: 'scholarship',
       title: 'Scholarship',
       icon: Users,
-      color: 'bg-teal-50 text-teal-600',
+      color: 'bg-purple-50 text-purple-600',
+      category: 'financial'
     },
     {
       id: 'event-permission',
       title: 'Event Permission',
       icon: Users,
-      color: 'bg-teal-50 text-teal-600',
+      color: 'bg-orange-50 text-orange-600',
+      category: 'administrative'
     },
   ];
 
@@ -116,31 +116,207 @@ const ApplicationForm = ({ onClose }) => {
     { id: 3, name: 'Documents' },
   ];
 
-  const onSubmit = async (data) => {
-    if (step < steps.length) {
-      // Validate current step before proceeding
-      const currentStepFields = step === 1 
-        ? ['type', 'subject', 'priority']
-        : step === 2 
-        ? ['description', 'startDate', 'endDate']
-        : ['documents'];
+  const validateStep = (currentStep) => {
+    const values = form.getValues();
+    
+    switch (currentStep) {
+      case 1:
+        if (!values.type) {
+          toast.error('Please select an application type');
+          return false;
+        }
+        if (!values.subject || values.subject.length < 5) {
+          toast.error('Please enter a subject (minimum 5 characters)');
+          return false;
+        }
+        if (!values.priority) {
+          toast.error('Please select a priority level');
+          return false;
+        }
+        return true;
 
-      const isValid = await form.trigger(currentStepFields);
-      if (!isValid) {
-        toast.error('Please fill in all required fields correctly');
+      case 2:
+        if (!values.description || values.description.length < 20) {
+          toast.error('Please provide a detailed description (minimum 20 characters)');
+          return false;
+        }
+        if (!values.startDate) {
+          toast.error('Please select a start date');
+          return false;
+        }
+        if (!values.endDate) {
+          toast.error('Please select an end date');
+          return false;
+        }
+        if (new Date(values.endDate) < new Date(values.startDate)) {
+          toast.error('End date cannot be before start date');
+          return false;
+        }
+        return true;
+
+      case 3:
+        return true; // Documents are optional
+
+      default:
+        return false;
+    }
+  };
+
+  const handleNext = () => {
+    if (validateStep(step)) {
+      setStep(step + 1);
+    }
+  };
+
+  const handlePrevious = () => {
+    setStep(step - 1);
+  };
+
+  const handleFileSelect = async (event) => {
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
+
+    setUploading(true);
+    try {
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      const maxSize = 5 * 1024 * 1024; // 5MB
+
+      // Validate files
+      const invalidFiles = files.filter(
+        file => !allowedTypes.includes(file.type) || file.size > maxSize
+      );
+
+      if (invalidFiles.length > 0) {
+        toast.error('Some files were not added. Please ensure files are PDF, Word, or images under 5MB.');
         return;
       }
-      setStep(step + 1);
-    } else {
-      try {
-        // TODO: Replace with actual API call
-        console.log('Form submitted:', data);
-        toast.success('Application submitted successfully!');
-        onClose();
-      } catch (error) {
-        toast.error('Failed to submit application. Please try again.');
-        console.error('Error submitting application:', error);
+
+      const newFiles = files.map(file => ({
+        file,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        progress: 0,
+        uploaded: false,
+        url: null
+      }));
+
+      setSelectedFiles(prev => [...prev, ...newFiles]);
+      form.setValue('documents', [...(form.getValues('documents') || []), ...newFiles]);
+
+    } catch (error) {
+      console.error('Error handling files:', error);
+      toast.error('Error handling files. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileDrop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const files = event.dataTransfer?.files;
+    if (files?.length) {
+      handleFileSelect({ target: { files } });
+    }
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const removeFile = (index) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    const currentDocs = form.getValues('documents') || [];
+    form.setValue('documents', currentDocs.filter((_, i) => i !== index));
+  };
+
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', `campus-nexus/${user.uid}`);
+
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
       }
+
+      const data = await response.json();
+      return {
+        url: data.secure_url,
+        public_id: data.public_id,
+        resource_type: data.resource_type
+      };
+    } catch (error) {
+      console.error('Upload error:', error);
+      throw error;
+    }
+  };
+
+  const uploadFiles = async () => {
+    if (selectedFiles.length === 0) return [];
+
+    const uploadPromises = selectedFiles.map(async (fileObj) => {
+      if (fileObj.uploaded && fileObj.url) return fileObj;
+
+      try {
+        const uploadResult = await uploadToCloudinary(fileObj.file);
+        return {
+          ...fileObj,
+          uploaded: true,
+          url: uploadResult.url,
+          public_id: uploadResult.public_id,
+          resource_type: uploadResult.resource_type
+        };
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        throw error;
+      }
+    });
+
+    return Promise.all(uploadPromises);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const applicationRef = ref(database, 'applications');
+      const newApplication = {
+        ...form.getValues(),
+        studentId: user.uid,
+        studentName: user.displayName || user.email,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      };
+
+      const newRef = await push(applicationRef, newApplication);
+      
+      // Create notification for the new application
+      await createApplicationNotification(
+        { ...newApplication, id: newRef.key },
+        user
+      );
+
+      toast.success('Application submitted successfully!');
+      onClose();
+    } catch (error) {
+      console.error('Error submitting application:', error);
+      toast.error('Failed to submit application');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -155,6 +331,7 @@ const ApplicationForm = ({ onClose }) => {
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-500 focus:outline-none"
+          disabled={isSubmitting}
         >
           <X className="h-6 w-6" />
         </button>
@@ -186,7 +363,8 @@ const ApplicationForm = ({ onClose }) => {
       {/* Form Content */}
       <div className="p-6">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Step 1: Basic Info */}
             {step === 1 && (
               <>
                 <div>
@@ -208,6 +386,7 @@ const ApplicationForm = ({ onClose }) => {
                             <Icon className="h-5 w-5" />
                           </div>
                           <h4 className="font-medium">{type.title}</h4>
+                          <p className="text-sm text-gray-500 mt-1">Category: {type.category}</p>
                         </div>
                       );
                     })}
@@ -261,14 +440,11 @@ const ApplicationForm = ({ onClose }) => {
                       );
                     })}
                   </div>
-                  <FormMessage />
-                  <FormDescription>
-                    Select the priority level based on the urgency of your request. Higher priority requests will be processed faster but should only be used for truly urgent matters.
-                  </FormDescription>
                 </div>
               </>
             )}
 
+            {/* Step 2: Details */}
             {step === 2 && (
               <>
                 <FormField
@@ -324,7 +500,7 @@ const ApplicationForm = ({ onClose }) => {
                   name="additionalInfo"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Additional Information</FormLabel>
+                      <FormLabel>Additional Information (Optional)</FormLabel>
                       <FormControl>
                         <Textarea 
                           placeholder="Any other relevant details..."
@@ -339,9 +515,14 @@ const ApplicationForm = ({ onClose }) => {
               </>
             )}
 
+            {/* Step 3: Documents */}
             {step === 3 && (
               <div className="space-y-6">
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-6 transition-colors duration-200 ease-in-out hover:border-teal-300"
+                  onDrop={handleFileDrop}
+                  onDragOver={handleDragOver}
+                >
                   <div className="flex flex-col items-center text-center">
                     <Upload className="h-10 w-10 text-gray-400 mb-3" />
                     <h3 className="text-lg font-medium text-gray-900 mb-1">
@@ -350,16 +531,63 @@ const ApplicationForm = ({ onClose }) => {
                     <p className="text-sm text-gray-500 mb-4">
                       Drag and drop your files here, or click to browse
                     </p>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      multiple
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      className="hidden"
+                    />
                     <Button
                       type="button"
                       variant="outline"
                       className="flex items-center"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
                     >
-                      <Paperclip className="h-4 w-4 mr-2" />
-                      Choose Files
+                      {uploading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-teal-500 mr-2" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Paperclip className="h-4 w-4 mr-2" />
+                          Choose Files
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
+
+                {selectedFiles.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">Selected Files</h4>
+                    <div className="space-y-2">
+                      {selectedFiles.map((file, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                        >
+                          <div className="flex items-center">
+                            <FileText className="h-4 w-4 text-teal-500 mr-2" />
+                            <span className="text-sm text-gray-600">{file.name}</span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700"
+                            onClick={() => removeFile(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h4 className="text-sm font-medium text-gray-900 mb-2">
@@ -372,9 +600,12 @@ const ApplicationForm = ({ onClose }) => {
                     </li>
                     <li className="flex items-center">
                       <FileText className="h-4 w-4 mr-2 text-teal-500" />
-                      Supporting Documents
+                      Supporting Documents (Optional)
                     </li>
                   </ul>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Accepted file types: PDF, Word, Images (JPG, PNG) • Max file size: 5MB
+                  </p>
                 </div>
               </div>
             )}
@@ -385,7 +616,8 @@ const ApplicationForm = ({ onClose }) => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setStep(step - 1)}
+                  onClick={handlePrevious}
+                  disabled={isSubmitting}
                 >
                   Previous
                 </Button>
@@ -394,6 +626,7 @@ const ApplicationForm = ({ onClose }) => {
                   type="button"
                   variant="outline"
                   onClick={onClose}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </Button>
@@ -401,8 +634,16 @@ const ApplicationForm = ({ onClose }) => {
               <Button 
                 type="submit"
                 className={form.watch('priority') === 'urgent' ? 'bg-red-600 hover:bg-red-700' : ''}
+                disabled={isSubmitting}
               >
-                {step === steps.length ? 'Submit Application' : 'Next'}
+                {isSubmitting ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                    {step === steps.length ? 'Submitting...' : 'Processing...'}
+                  </div>
+                ) : (
+                  step === steps.length ? 'Submit Application' : 'Next'
+                )}
               </Button>
             </div>
           </form>

@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getDatabase, ref, onValue, update, push, set, get } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
+import { toast } from 'react-hot-toast';
 import {
   DollarSign,
   FileText,
@@ -106,6 +109,106 @@ const mockApplications = [
   }
 ];
 
+// Wrap ApplicationCard with forwardRef
+const ApplicationCard = forwardRef(({ application, onClick }, ref) => (
+  <motion.div
+    ref={ref}
+    layout
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -20 }}
+    whileHover={{ scale: 1.02, boxShadow: "0 10px 25px rgba(0,0,0,0.1)" }}
+    className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden"
+  >
+    <div className="p-6">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">
+            {application.title || application.purpose || 'Untitled Request'}
+          </h3>
+          <p className="text-sm text-gray-500">{application.department}</p>
+        </div>
+        <div className="flex flex-col items-end space-y-2">
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+            application.status === 'approved'
+              ? 'bg-green-100 text-green-800'
+              : application.status === 'rejected'
+              ? 'bg-red-100 text-red-800'
+              : 'bg-yellow-100 text-yellow-800'
+          }`}>
+            {application.status?.charAt(0).toUpperCase() + application.status?.slice(1) || 'Pending'}
+          </span>
+          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+            application.priority === 'high'
+              ? 'bg-red-50 text-red-700'
+              : application.priority === 'medium'
+              ? 'bg-yellow-50 text-yellow-700'
+              : 'bg-blue-50 text-blue-700'
+          }`}>
+            {application.priority || 'normal'}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="flex items-center text-sm text-gray-600">
+          <DollarSign className="w-4 h-4 mr-2 text-green-500" />
+          ₹{(application.requestedAmount || 0).toLocaleString()}
+        </div>
+        <div className="flex items-center text-sm text-gray-600">
+          <Calendar className="w-4 h-4 mr-2 text-blue-500" />
+          {new Date(application.createdAt || Date.now()).toLocaleDateString()}
+        </div>
+        <div className="flex items-center text-sm text-gray-600">
+          <Users className="w-4 h-4 mr-2 text-purple-500" />
+          {application.userName || application.userId || 'Unknown User'}
+        </div>
+        <div className="flex items-center text-sm text-gray-600">
+          <FileText className="w-4 h-4 mr-2 text-orange-500" />
+          {(application.attachments?.length || 0)} files
+        </div>
+      </div>
+
+      <p className="text-sm text-gray-600 line-clamp-2">
+        {application.description || application.purpose || 'No description provided'}
+      </p>
+
+      <div className="mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500">Category: {application.category || 'General'}</span>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick(application);
+            }}
+            className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center"
+          >
+            View Details <Eye className="ml-1 w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  </motion.div>
+));
+
+// Add display name for better debugging
+ApplicationCard.displayName = 'ApplicationCard';
+
+// Default statistics state
+const defaultStatistics = {
+  totalBudget: 0,
+  spentBudget: 0,
+  pendingRequests: 0,
+  approvedThisMonth: 0,
+  rejectedThisMonth: 0,
+  departments: [
+    { name: 'IT', allocation: 0, spent: 0 },
+    { name: 'Marketing', allocation: 0, spent: 0 },
+    { name: 'Operations', allocation: 0, spent: 0 },
+    { name: 'HR', allocation: 0, spent: 0 }
+  ]
+};
+
 const FundManagement = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,61 +218,253 @@ const FundManagement = () => {
   const [showStats, setShowStats] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [applications, setApplications] = useState(mockApplications);
-  const [statistics, setStatistics] = useState(mockStatistics);
+  const [applications, setApplications] = useState([]);
+  const [statistics, setStatistics] = useState(defaultStatistics);
   const [filterBy, setFilterBy] = useState('all');
   const [sortBy, setSortBy] = useState('date');
   const [viewMode, setViewMode] = useState('grid');
 
-  // Simulated data fetching
-  const fetchData = async () => {
+  // Function to manually refresh data
+  const handleRefresh = async () => {
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsLoading(false);
+    try {
+      const db = getDatabase();
+      const budgetRequestsRef = ref(db, 'budget_requests');
+      const snapshot = await get(budgetRequestsRef);
+      const requests = [];
+      snapshot.forEach((childSnapshot) => {
+        requests.push({
+          id: childSnapshot.key,
+          ...childSnapshot.val()
+        });
+      });
+      setApplications(requests);
+      updateStatistics(requests);
+      toast.success('Data refreshed successfully');
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Failed to refresh data');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  // Update statistics based on requests
+  const updateStatistics = (requests) => {
+    if (!Array.isArray(requests)) {
+      console.warn('updateStatistics received invalid requests:', requests);
+      return;
+    }
+
+    const now = new Date();
+    const thisMonth = now.getMonth();
+    const thisYear = now.getFullYear();
+
+    const stats = {
+      ...defaultStatistics,
+      spentBudget: 0,
+      pendingRequests: 0,
+      approvedThisMonth: 0,
+      rejectedThisMonth: 0,
+      departments: { ...defaultStatistics.departments.reduce((acc, dept) => ({
+        ...acc,
+        [dept.name]: { ...dept }
+      }), {}) }
+    };
+
+    // Fetch department budgets
+    const db = getDatabase();
+    const departmentBudgetsRef = ref(db, 'department_budgets');
+    get(departmentBudgetsRef).then((snapshot) => {
+      if (snapshot.exists()) {
+        const budgets = snapshot.val();
+        Object.keys(budgets).forEach(deptName => {
+          if (stats.departments[deptName]) {
+            stats.departments[deptName].allocation = budgets[deptName].allocation || 0;
+          }
+        });
+      }
+    });
+
+    requests.forEach(request => {
+      if (!request) return;
+
+      const requestDate = new Date(request.createdAt || Date.now());
+      const isThisMonth = requestDate.getMonth() === thisMonth && 
+                         requestDate.getFullYear() === thisYear;
+
+      // Update request counts
+      if (request.status === 'pending') {
+        stats.pendingRequests++;
+      } else if (isThisMonth) {
+        if (request.status === 'approved') {
+          stats.approvedThisMonth++;
+          stats.spentBudget += parseFloat(request.requestedAmount) || 0;
+        } else if (request.status === 'rejected') {
+          stats.rejectedThisMonth++;
+        }
+      }
+
+      // Update department statistics
+      if (request.department && stats.departments[request.department]) {
+        if (request.status === 'approved') {
+          stats.departments[request.department].spent += parseFloat(request.requestedAmount) || 0;
+        }
+      }
+    });
+
+    // Convert departments object to array
+    stats.departments = Object.values(stats.departments);
+
+    setStatistics(stats);
+  };
+
+  // Fetch budget requests from Firebase
   useEffect(() => {
-    fetchData();
+    const db = getDatabase();
+    const budgetRequestsRef = ref(db, 'budget_requests');
+    
+    // Set up real-time listener
+    const unsubscribe = onValue(budgetRequestsRef, (snapshot) => {
+      const requests = [];
+      snapshot.forEach((childSnapshot) => {
+        requests.push({
+          id: childSnapshot.key,
+          ...childSnapshot.val()
+        });
+      });
+      setApplications(requests);
+      updateStatistics(requests);
+    }, (error) => {
+      console.error('Error setting up real-time listener:', error);
+      toast.error('Error loading budget requests');
+    });
+
+    // Cleanup listener on component unmount
+    return () => unsubscribe();
   }, []);
+
+  // Format currency helper
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
 
   // Handle application approval/rejection
   const handleApproval = async (applicationId, isApproved) => {
     if (!approvalNote) {
-      alert('Please add a note for your decision');
+      toast.error('Please add a note for your decision');
       return;
     }
 
     setIsSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    const db = getDatabase();
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    
+    try {
+      const request = applications.find(app => app.id === applicationId);
+      if (!request) {
+        throw new Error('Application not found');
+      }
 
-    setApplications(applications.map(app =>
-      app.id === applicationId
-        ? { ...app, status: isApproved ? 'approved' : 'rejected' }
-        : app
-    ));
+      const now = Date.now();
+      const status = isApproved ? 'approved' : 'rejected';
 
-    setSelectedApplication(null);
-    setApprovalNote('');
-    setIsSubmitting(false);
+      // Update request status
+      const updates = {};
+      updates[`/budget_requests/${applicationId}`] = {
+        ...request,
+        status,
+        approvalNote,
+        approvedBy: currentUser.email,
+        approvedAt: now,
+        updatedAt: now
+      };
+
+      // Create notification for the student
+      const notificationData = {
+        userId: request.userId,
+        title: `Budget Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+        message: `Your budget request for ₹${request.requestedAmount.toLocaleString()} has been ${status}. Note: ${approvalNote}`,
+        type: isApproved ? 'success' : 'error',
+        read: false,
+        createdAt: now,
+        requestId: applicationId,
+        amount: request.requestedAmount,
+        department: request.department
+      };
+
+      // Update student's budget if approved
+      if (isApproved) {
+        const studentBudgetRef = ref(db, `student_budgets/${request.userId}`);
+        const studentBudgetSnapshot = await get(studentBudgetRef);
+        const currentBudget = studentBudgetSnapshot.exists() ? studentBudgetSnapshot.val() : {
+          totalSpent: 0,
+          lastUpdated: now
+        };
+
+        updates[`/student_budgets/${request.userId}`] = {
+          ...currentBudget,
+          totalSpent: currentBudget.totalSpent + parseFloat(request.requestedAmount),
+          lastUpdated: now
+        };
+
+        // Update department budget
+        if (request.department) {
+          const deptBudgetRef = ref(db, `department_budgets/${request.department}`);
+          const deptSnapshot = await get(deptBudgetRef);
+          const deptBudget = deptSnapshot.exists() ? deptSnapshot.val() : {
+            spent: 0,
+            lastUpdated: now
+          };
+
+          updates[`/department_budgets/${request.department}`] = {
+            ...deptBudget,
+            spent: deptBudget.spent + parseFloat(request.requestedAmount),
+            lastUpdated: now
+          };
+        }
+      }
+
+      // Add notification
+      const newNotificationRef = push(ref(db, 'notifications'));
+      
+      await Promise.all([
+        update(ref(db), updates),
+        set(newNotificationRef, notificationData)
+      ]);
+
+      toast.success(`Request ${status} successfully`);
+      setSelectedApplication(null);
+      setApprovalNote('');
+    } catch (error) {
+      console.error('Error updating request:', error);
+      toast.error('Failed to update request status');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Filter and sort applications
-  const filteredApplications = applications
-    .filter(app => {
-      const matchesSearch = app.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          app.department.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesFilter = filterBy === 'all' || app.status === filterBy || app.priority === filterBy;
-      return matchesSearch && matchesFilter;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'date') return new Date(b.submittedDate) - new Date(a.submittedDate);
-      if (sortBy === 'amount') return b.requestedAmount - a.requestedAmount;
-      if (sortBy === 'priority') {
-        const priorityOrder = { high: 3, medium: 2, low: 1 };
-        return priorityOrder[b.priority] - priorityOrder[a.priority];
-      }
-      return 0;
-    });
+  const filteredApplications = applications?.filter(app => {
+    if (!app) return false;
+    const matchesSearch = 
+      (app.purpose?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+       app.department?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+       app.userName?.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesFilter = filterBy === 'all' || app.status === filterBy;
+    return matchesSearch && matchesFilter;
+  }) || [];
+
+  const sortedApplications = [...filteredApplications].sort((a, b) => {
+    if (sortBy === 'date') return (b.createdAt || 0) - (a.createdAt || 0);
+    if (sortBy === 'amount') return (b.requestedAmount || 0) - (a.requestedAmount || 0);
+    return 0;
+  });
 
   const StatCard = ({ title, value, icon: Icon, color, trend, description }) => (
     <motion.div
@@ -204,88 +499,13 @@ const FundManagement = () => {
     </motion.div>
   );
 
-  const ApplicationCard = ({ application, onClick }) => (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      whileHover={{ scale: 1.02, boxShadow: "0 10px 25px rgba(0,0,0,0.1)" }}
-      className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden cursor-pointer"
-      onClick={() => onClick(application)}
-    >
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">
-              {application.title}
-            </h3>
-            <p className="text-sm text-gray-500">{application.department}</p>
-          </div>
-          <div className="flex flex-col items-end space-y-2">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-              application.status === 'approved'
-                ? 'bg-green-100 text-green-800'
-                : application.status === 'rejected'
-                ? 'bg-red-100 text-red-800'
-                : 'bg-yellow-100 text-yellow-800'
-            }`}>
-              {application.status.charAt(0).toUpperCase() + application.status.slice(1)}
-            </span>
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              application.priority === 'high'
-                ? 'bg-red-50 text-red-700'
-                : application.priority === 'medium'
-                ? 'bg-yellow-50 text-yellow-700'
-                : 'bg-blue-50 text-blue-700'
-            }`}>
-              {application.priority}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="flex items-center text-sm text-gray-600">
-            <DollarSign className="w-4 h-4 mr-2 text-green-500" />
-            ₹{application.requestedAmount.toLocaleString()}
-          </div>
-          <div className="flex items-center text-sm text-gray-600">
-            <Calendar className="w-4 h-4 mr-2 text-blue-500" />
-            {application.submittedDate}
-          </div>
-          <div className="flex items-center text-sm text-gray-600">
-            <Users className="w-4 h-4 mr-2 text-purple-500" />
-            {application.submittedBy}
-          </div>
-          <div className="flex items-center text-sm text-gray-600">
-            <FileText className="w-4 h-4 mr-2 text-orange-500" />
-            {application.attachments.length} files
-          </div>
-        </div>
-
-        <p className="text-sm text-gray-600 line-clamp-2">
-          {application.description}
-        </p>
-
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">Category: {application.category}</span>
-            <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-              View Details →
-            </button>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-
-  const DashboardView = () => (
+  const DashboardView = ({ statistics, applications, formatCurrency }) => (
     <div className="space-y-8">
       {/* Statistics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Budget"
-          value={`₹${(statistics.totalBudget / 100000).toFixed(1)}L`}
+          value={`₹${((statistics?.totalBudget || 0) / 100000).toFixed(1)}L`}
           icon={DollarSign}
           color="from-blue-500 to-blue-600"
           trend={12.5}
@@ -293,15 +513,15 @@ const FundManagement = () => {
         />
         <StatCard
           title="Spent"
-          value={`₹${(statistics.spentBudget / 100000).toFixed(1)}L`}
+          value={`₹${((statistics?.spentBudget || 0) / 100000).toFixed(1)}L`}
           icon={TrendingUp}
           color="from-green-500 to-green-600"
           trend={8.3}
-          description={`${((statistics.spentBudget / statistics.totalBudget) * 100).toFixed(1)}% utilized`}
+          description={`${(((statistics?.spentBudget || 0) / (statistics?.totalBudget || 1)) * 100).toFixed(1)}% utilized`}
         />
         <StatCard
           title="Pending"
-          value={statistics.pendingRequests}
+          value={statistics?.pendingRequests || 0}
           icon={Clock}
           color="from-yellow-500 to-orange-500"
           trend={-5.2}
@@ -309,7 +529,7 @@ const FundManagement = () => {
         />
         <StatCard
           title="Approved"
-          value={statistics.approvedThisMonth}
+          value={statistics?.approvedThisMonth || 0}
           icon={CheckCircle}
           color="from-purple-500 to-purple-600"
           trend={15.7}
@@ -325,7 +545,7 @@ const FundManagement = () => {
       >
         <h3 className="text-xl font-semibold text-gray-900 mb-6">Department Budget Overview</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {statistics.departments.map((dept, index) => (
+          {statistics?.departments?.map((dept, index) => (
             <motion.div
               key={dept.name}
               initial={{ opacity: 0, x: -20 }}
@@ -406,7 +626,7 @@ const FundManagement = () => {
     </div>
   );
 
-  const ApplicationsView = () => (
+  const ApplicationsView = ({ applications, isLoading, searchQuery, filterBy, sortBy, viewMode, setSelectedApplication }) => (
     <div className="space-y-6">
       {/* Controls */}
       <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
@@ -495,7 +715,7 @@ const FundManagement = () => {
           }`}
         >
           <AnimatePresence mode="popLayout">
-            {filteredApplications.map(application => (
+            {sortedApplications.map(application => (
               <ApplicationCard
                 key={application.id}
                 application={application}
@@ -524,7 +744,7 @@ const FundManagement = () => {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={fetchData}
+                onClick={handleRefresh}
                 className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700 transition-colors"
                 disabled={isLoading}
               >
@@ -582,7 +802,23 @@ const FundManagement = () => {
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.3 }}
           >
-            {activeTab === 'dashboard' ? <DashboardView /> : <ApplicationsView />}
+            {activeTab === 'dashboard' ? (
+              <DashboardView 
+                statistics={statistics} 
+                applications={applications} 
+                formatCurrency={formatCurrency}
+              />
+            ) : (
+              <ApplicationsView 
+                applications={applications} 
+                isLoading={isLoading}
+                searchQuery={searchQuery}
+                filterBy={filterBy}
+                sortBy={sortBy}
+                viewMode={viewMode}
+                setSelectedApplication={setSelectedApplication}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -602,9 +838,9 @@ const FundManagement = () => {
                 <div className="flex justify-between items-start">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">
-                      {selectedApplication.title}
+                      {selectedApplication.title || selectedApplication.purpose || 'Untitled Request'}
                     </h2>
-                    <p className="text-gray-600 mt-1">{selectedApplication.department}</p>
+                    <p className="text-gray-600 mt-1">{selectedApplication.department || 'No Department'}</p>
                   </div>
                   <button
                     onClick={() => setSelectedApplication(null)}
@@ -621,7 +857,7 @@ const FundManagement = () => {
                   <div className="bg-blue-50 rounded-xl p-4">
                     <p className="text-sm text-blue-600 font-medium">Requested Amount</p>
                     <p className="text-2xl font-bold text-blue-900">
-                      ₹{selectedApplication.requestedAmount.toLocaleString()}
+                      ₹{(selectedApplication.requestedAmount || 0).toLocaleString()}
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-4">
@@ -633,7 +869,7 @@ const FundManagement = () => {
                         ? 'bg-red-100 text-red-800'
                         : 'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {selectedApplication.status.charAt(0).toUpperCase() + selectedApplication.status.slice(1)}
+                      {selectedApplication.status?.charAt(0).toUpperCase() + selectedApplication.status?.slice(1) || 'Pending'}
                     </span>
                   </div>
                   <div className="bg-purple-50 rounded-xl p-4">
@@ -645,7 +881,7 @@ const FundManagement = () => {
                         ? 'bg-yellow-100 text-yellow-800'
                         : 'bg-blue-100 text-blue-800'
                     }`}>
-                      {selectedApplication.priority}
+                      {selectedApplication.priority || 'Normal'}
                     </span>
                   </div>
                 </div>
@@ -656,19 +892,21 @@ const FundManagement = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-gray-500">Submitted By</p>
-                      <p className="font-medium text-gray-900">{selectedApplication.submittedBy}</p>
+                      <p className="font-medium text-gray-900">{selectedApplication.userName || selectedApplication.userId || 'Unknown User'}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500">Category</p>
-                      <p className="font-medium text-gray-900">{selectedApplication.category}</p>
+                      <p className="font-medium text-gray-900">{selectedApplication.category || 'General'}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500">Submission Date</p>
-                      <p className="font-medium text-gray-900">{selectedApplication.submittedDate}</p>
+                      <p className="font-medium text-gray-900">
+                        {new Date(selectedApplication.createdAt || Date.now()).toLocaleDateString()}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-500">Department</p>
-                      <p className="font-medium text-gray-900">{selectedApplication.department}</p>
+                      <p className="font-medium text-gray-900">{selectedApplication.department || 'No Department'}</p>
                     </div>
                   </div>
                 </div>
@@ -676,65 +914,71 @@ const FundManagement = () => {
                 {/* Description */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Description</h3>
-                  <p className="text-gray-600 leading-relaxed">{selectedApplication.description}</p>
+                  <p className="text-gray-600 leading-relaxed">
+                    {selectedApplication.description || selectedApplication.purpose || 'No description provided'}
+                  </p>
                 </div>
 
                 {/* Expense Breakdown */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Breakdown</h3>
-                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    {selectedApplication.expenseBreakdown.map((expense, index) => (
-                      <motion.div
-                        key={index}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`flex justify-between items-center p-4 ${
-                          index !== selectedApplication.expenseBreakdown.length - 1 ? 'border-b border-gray-100' : ''
-                        }`}
-                      >
-                        <span className="text-gray-700 font-medium">{expense.item}</span>
-                        <span className="text-lg font-semibold text-gray-900">
-                          ₹{expense.amount.toLocaleString()}
-                        </span>
-                      </motion.div>
-                    ))}
-                    <div className="bg-gray-50 p-4 border-t-2 border-blue-200">
-                      <div className="flex justify-between items-center">
-                        <span className="text-lg font-semibold text-gray-900">Total</span>
-                        <span className="text-xl font-bold text-blue-600">
-                          ₹{selectedApplication.requestedAmount.toLocaleString()}
-                        </span>
+                {selectedApplication.expenseBreakdown && selectedApplication.expenseBreakdown.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Breakdown</h3>
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                      {selectedApplication.expenseBreakdown.map((expense, index) => (
+                        <motion.div
+                          key={index}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                          className={`flex justify-between items-center p-4 ${
+                            index !== selectedApplication.expenseBreakdown.length - 1 ? 'border-b border-gray-100' : ''
+                          }`}
+                        >
+                          <span className="text-gray-700 font-medium">{expense.item}</span>
+                          <span className="text-lg font-semibold text-gray-900">
+                            ₹{expense.amount.toLocaleString()}
+                          </span>
+                        </motion.div>
+                      ))}
+                      <div className="bg-gray-50 p-4 border-t-2 border-blue-200">
+                        <div className="flex justify-between items-center">
+                          <span className="text-lg font-semibold text-gray-900">Total</span>
+                          <span className="text-xl font-bold text-blue-600">
+                            ₹{selectedApplication.requestedAmount.toLocaleString()}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Attachments */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Attachments</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {selectedApplication.attachments.map((attachment, index) => (
-                      <motion.a
-                        key={index}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        href={attachment.url}
-                        className="flex items-center p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors border border-gray-200 hover:border-blue-300 group"
-                      >
-                        <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors">
-                          <FileText className="w-6 h-6 text-blue-600" />
-                        </div>
-                        <div className="ml-3 flex-1">
-                          <p className="text-sm font-medium text-gray-900">{attachment.name}</p>
-                          <p className="text-xs text-gray-500">Click to download</p>
-                        </div>
-                        <Download className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
-                      </motion.a>
-                    ))}
+                {selectedApplication.attachments && selectedApplication.attachments.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Attachments</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {selectedApplication.attachments.map((attachment, index) => (
+                        <motion.a
+                          key={index}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                          href={attachment.url}
+                          className="flex items-center p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors border border-gray-200 hover:border-blue-300 group"
+                        >
+                          <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors">
+                            <FileText className="w-6 h-6 text-blue-600" />
+                          </div>
+                          <div className="ml-3 flex-1">
+                            <p className="text-sm font-medium text-gray-900">{attachment.name}</p>
+                            <p className="text-xs text-gray-500">Click to download</p>
+                          </div>
+                          <Download className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                        </motion.a>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Approval Actions */}
                 {selectedApplication.status === 'pending' && (
@@ -815,8 +1059,13 @@ const FundManagement = () => {
                             {selectedApplication.status === 'approved' ? 'Approved' : 'Rejected'}
                           </p>
                           <p className="text-sm text-gray-500">
-                            Decision made by Admin • {new Date().toLocaleDateString()}
+                            Decision by {selectedApplication.approvedBy || 'Admin'} • {new Date(selectedApplication.approvedAt || selectedApplication.updatedAt || Date.now()).toLocaleDateString()}
                           </p>
+                          {selectedApplication.approvalNote && (
+                            <p className="mt-1 text-sm text-gray-600">
+                              Note: {selectedApplication.approvalNote}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center">
@@ -824,7 +1073,7 @@ const FundManagement = () => {
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">Submitted</p>
                           <p className="text-sm text-gray-500">
-                            By {selectedApplication.submittedBy} • {selectedApplication.submittedDate}
+                            By {selectedApplication.userName || selectedApplication.userId} • {new Date(selectedApplication.createdAt || Date.now()).toLocaleDateString()}
                           </p>
                         </div>
                       </div>

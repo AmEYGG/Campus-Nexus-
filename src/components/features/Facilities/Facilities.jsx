@@ -3,8 +3,8 @@ import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
-import { Avatar } from '../../ui/avatar';
-import { motion } from 'framer-motion';
+import { Input } from '../../ui/input';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar,
   Clock,
@@ -26,159 +26,105 @@ import {
   Info,
   Heart,
   Zap,
-  Bell
+  Bell,
+  TrendingUp
 } from 'lucide-react';
-import BookingRequestForm from '../Applications/BookingRequestForm';
+import BookingRequestForm from '../Applications/BookingRequestform';
+import { database } from '@/config/firebase';
+import { ref, onValue, query, orderByChild, equalTo, get } from 'firebase/database';
+import { useAuthContext } from '@/providers/AuthProvider';
+import { getUserBookings } from '@/services/facilityBookingService';
+import { toast } from 'react-hot-toast';
 
-// Enhanced mock data with more details and imagery concepts
-const facilitiesData = {
-  categories: [
-    {
-      id: 1,
-      name: 'Study Rooms',
-      icon: BookOpen,
-      color: 'bg-blue-100 text-blue-700',
-      description: 'Quiet spaces for individual or group study sessions',
-      facilities: [
-        {
-          id: 101,
-          name: 'Individual Study Room A',
-          capacity: 1,
-          location: 'Library Floor 2',
-          amenities: ['Desk', 'Chair', 'Power Outlet', 'Wi-Fi'],
-          availableSlots: ['09:00', '10:00', '11:00', '14:00', '15:00'],
-          rating: 4.8,
-          popularity: 'High',
-          status: 'Available',
-          bgColor: 'bg-blue-50'
-        },
-        {
-          id: 102,
-          name: 'Group Study Room B',
-          capacity: 6,
-          location: 'Library Floor 3',
-          amenities: ['Large Table', '6 Chairs', 'Whiteboard', 'Projector', 'Wi-Fi'],
-          availableSlots: ['09:00', '10:00', '13:00', '14:00', '16:00'],
-          rating: 4.5,
-          popularity: 'Medium',
-          status: 'Available',
-          bgColor: 'bg-blue-50'
-        },
-        {
-          id: 103,
-          name: 'Quiet Study Zone C',
-          capacity: 8,
-          location: 'Library Floor 1 - East Wing',
-          amenities: ['8 Desks', 'Noise Cancelling', 'Power Outlets', 'Natural Lighting'],
-          availableSlots: ['08:00', '09:00', '11:00', '13:00', '16:00'],
-          rating: 4.9,
-          popularity: 'Very High',
-          status: 'Limited',
-          bgColor: 'bg-blue-50'
-        }
-      ]
-    },
-    {
-      id: 2,
-      name: 'Computer Labs',
-      icon: Laptop,
-      color: 'bg-purple-100 text-purple-700',
-      description: 'Fully equipped labs with high-performance computers',
-      facilities: [
-        {
-          id: 201,
-          name: 'Computer Lab 1',
-          capacity: 30,
-          location: 'Tech Building Floor 1',
-          amenities: ['30 Computers', 'Printing Service', 'Scanner', 'Technical Support'],
-          availableSlots: ['08:00', '10:00', '12:00', '14:00', '16:00'],
-          rating: 4.6,
-          popularity: 'High',
-          status: 'Available',
-          bgColor: 'bg-purple-50'
-        },
-        {
-          id: 202,
-          name: 'Design Lab',
-          capacity: 20,
-          location: 'Arts Building Floor 2',
-          amenities: ['20 iMacs', 'Adobe Creative Suite', 'Graphic Tablets', 'Printing'],
-          availableSlots: ['09:00', '11:00', '13:00', '15:00'],
-          rating: 4.7,
-          popularity: 'Very High',
-          status: 'Limited',
-          bgColor: 'bg-purple-50'
-        }
-      ]
-    },
-    {
-      id: 3,
-      name: 'Sports Facilities',
-      icon: Dumbbell,
-      color: 'bg-green-100 text-green-700',
-      description: 'Stay fit with our range of sports and fitness facilities',
-      facilities: [
-        {
-          id: 301,
-          name: 'Gymnasium',
-          capacity: 50,
-          location: 'Sports Complex',
-          amenities: ['Basketball Court', 'Fitness Equipment', 'Changing Rooms', 'Lockers'],
-          availableSlots: ['07:00', '09:00', '11:00', '15:00', '17:00'],
-          rating: 4.4,
-          popularity: 'Medium',
-          status: 'Available',
-          bgColor: 'bg-green-50'
-        },
-        {
-          id: 302,
-          name: 'Swimming Pool',
-          capacity: 40,
-          location: 'Sports Complex - Aquatic Center',
-          amenities: ['Olympic Pool', 'Diving Area', 'Heated Water', 'Lifeguard'],
-          availableSlots: ['08:00', '10:00', '14:00', '16:00', '18:00'],
-          rating: 4.9,
-          popularity: 'Very High',
-          status: 'Limited',
-          bgColor: 'bg-green-50'
-        }
-      ]
-    },
-    {
-      id: 4,
-      name: 'Music Rooms',
-      icon: Music,
-      color: 'bg-red-100 text-red-700',
-      description: 'Practice rooms with instruments for music students',
-      facilities: [
-        {
-          id: 401,
-          name: 'Piano Room',
-          capacity: 3,
-          location: 'Music Building Floor 1',
-          amenities: ['Grand Piano', 'Sound Proofing', 'Music Stands', 'Recording Equipment'],
-          availableSlots: ['09:00', '11:00', '13:00', '15:00', '17:00'],
-          rating: 4.7,
-          popularity: 'High',
-          status: 'Available',
-          bgColor: 'bg-red-50'
-        },
-        {
-          id: 402,
-          name: 'Band Practice Room',
-          capacity: 10,
-          location: 'Music Building Basement',
-          amenities: ['Drum Kit', 'Amplifiers', 'Microphones', 'Sound System'],
-          availableSlots: ['10:00', '12:00', '14:00', '16:00', '18:00'],
-          rating: 4.8,
-          popularity: 'High',
-          status: 'Available',
-          bgColor: 'bg-red-50'
-        }
-      ]
-    }
-  ]
-};
+const facilityCategories = [
+  {
+    id: 'study-rooms',
+    name: 'Study Rooms',
+    icon: BookOpen,
+    description: 'Quiet spaces for individual or group study sessions',
+    facilities: [
+      {
+        id: 'quiet-zone-c',
+        name: 'Quiet Study Zone C',
+        location: 'Library Floor 1 - East Wing',
+        capacity: 8,
+        rating: 4.9,
+        status: 'Limited',
+        image: '/src/components/Images/IMG-20250522-WA0004.jpg',
+        type: 'study-rooms',
+        amenities: ['Quiet Environment', 'Study Tables', 'Power Outlets', 'WiFi']
+      },
+      {
+        id: 'individual-room-a',
+        name: 'Individual Study Room A',
+        location: 'Library Floor 2',
+        capacity: 1,
+        rating: 4.8,
+        status: 'Available',
+        image: '/src/components/Images/IMG-20250522-WA0005.jpg',
+        type: 'study-rooms',
+        amenities: ['Private Space', 'Desk', 'Chair', 'WiFi']
+      }
+    ]
+  },
+  {
+    id: 'computer-labs',
+    name: 'Computer Labs',
+    icon: Laptop,
+    description: 'Fully equipped labs with high-performance computers',
+    facilities: [
+      {
+        id: 'computer-lab-1',
+        name: 'Computer Lab 1',
+        location: 'Tech Building Floor 1',
+        capacity: 30,
+        rating: 4.6,
+        status: 'Available',
+        image: '/src/components/Images/IMG-20250522-WA0006.jpg',
+        type: 'computer-labs',
+        amenities: ['High-end PCs', 'Software Suite', 'Printing', 'Technical Support']
+      }
+    ]
+  },
+  {
+    id: 'sports',
+    name: 'Sports Facilities',
+    icon: Dumbbell,
+    description: 'Sports and fitness facilities for physical activities',
+    facilities: [
+      {
+        id: 'swimming-pool',
+        name: 'Swimming Pool',
+        location: 'Sports Complex - Aquatic Center',
+        capacity: 40,
+        rating: 4.9,
+        status: 'Limited',
+        image: '/src/components/Images/IMG-20250522-WA0007.jpg',
+        type: 'sports',
+        amenities: ['Olympic Size Pool', 'Changing Rooms', 'Lockers', 'Lifeguard']
+      }
+    ]
+  },
+  {
+    id: 'music-rooms',
+    name: 'Music Rooms',
+    icon: Music,
+    description: 'Practice rooms with instruments for music students',
+    facilities: [
+      {
+        id: 'piano-room',
+        name: 'Piano Room',
+        location: 'Music Building Floor 1',
+        capacity: 3,
+        rating: 4.7,
+        status: 'Available',
+        image: '/src/components/Images/IMG-20250522-WA0008.jpg',
+        type: 'music-rooms',
+        amenities: ['Grand Piano', 'Sound Proofing', 'Music Stands', 'Recording Equipment']
+      }
+    ]
+  }
+];
 
 // Status Badge Component
 const StatusBadge = ({ status }) => {
@@ -211,104 +157,120 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-// Animated Facility Card
-const FacilityCard = ({ facility, onBook, showDetails }) => {
-  const [isFavorite, setIsFavorite] = useState(false);
+// Quick Stats Card
+const QuickStatsCard = ({ icon: Icon, label, value, onClick, className = '' }) => (
+  <Card 
+    className={`p-4 flex items-center space-x-4 ${onClick ? 'cursor-pointer' : ''} ${className}`}
+    onClick={onClick}
+  >
+    <div className="p-2 rounded-full bg-white bg-opacity-60">
+      <Icon className="h-6 w-6 text-gray-900" />
+    </div>
+    <div>
+      <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <p className="text-sm text-gray-600">{label}</p>
+    </div>
+  </Card>
+);
 
-  const toggleFavorite = (e) => {
-    e.stopPropagation();
-    setIsFavorite(!isFavorite);
+// Booking Tip Card
+const BookingTipCard = ({ icon: Icon, title, description }) => (
+  <Card className="p-6 hover:shadow-lg transition-shadow">
+    <div className="p-3 rounded-full bg-blue-100 w-fit mb-4">
+      <Icon className="h-6 w-6 text-blue-600" />
+    </div>
+    <h3 className="text-lg font-semibold mb-2">{title}</h3>
+    <p className="text-gray-600">{description}</p>
+  </Card>
+);
+
+// Updated Facility Card
+const FacilityCard = ({ facility, onBook, popular, onStatusChange }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Available': return 'bg-green-100 text-green-800';
+      case 'Limited': return 'bg-yellow-100 text-yellow-800';
+      case 'Booked': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
   };
 
   return (
     <motion.div
       whileHover={{ scale: 1.02 }}
-      transition={{ duration: 0.2 }}
-      layout
+      className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100 h-full flex flex-col"
     >
-      <Card className={`overflow-hidden hover:shadow-lg transition-shadow duration-300 ${facility.bgColor} border-2 border-gray-100`}>
-        <div className="aspect-video relative">
-          {/* Placeholder for facility image with gradient overlay */}
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-800 to-gray-600 relative overflow-hidden">
-            <Building className="h-16 w-16 text-white opacity-50" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-            <div className="absolute bottom-3 left-3 z-10">
-              <StatusBadge status={facility.status} />
-            </div>
-            <button 
-              className="absolute top-3 right-3 z-10 p-1.5 bg-white/80 rounded-full hover:bg-white transition-colors"
-              onClick={toggleFavorite}
-            >
-              <Heart className={`h-5 w-5 ${isFavorite ? 'text-red-500 fill-red-500' : 'text-gray-500'}`} />
-            </button>
+      <div className="h-48 relative">
+        {popular && (
+          <div className="absolute top-2 right-2 z-10">
+            <Badge className="bg-blue-100 text-blue-800">
+              <TrendingUp className="w-3 h-3 mr-1" />
+              Popular
+            </Badge>
+          </div>
+        )}
+        <div className="absolute top-2 left-2 z-10">
+          <Badge className={getStatusColor(facility.status)}>{facility.status}</Badge>
+        </div>
+        <img 
+          src={facility.image} 
+          alt={facility.name}
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src = '/src/components/Images/IMG-20250522-WA0004.jpg';
+          }}
+        />
+      </div>
+      <div className="p-4 flex-1 flex flex-col">
+        <div className="flex justify-between items-start mb-2">
+          <h3 className="text-lg font-semibold text-gray-900">{facility.name}</h3>
+          <div className="flex items-center">
+            <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+            <span className="ml-1 text-sm font-medium">{facility.rating}</span>
           </div>
         </div>
-        <div className="p-6">
-          <div className="mb-4">
-            <div className="flex justify-between items-start">
-              <h3 className="text-xl font-semibold">{facility.name}</h3>
-              <div className="flex items-center gap-1 text-yellow-500">
-                <Star className="h-4 w-4 fill-yellow-500" />
-                <span className="text-sm font-medium">{facility.rating}</span>
+        <div className="space-y-2 mb-4 flex-1">
+          <div className="flex items-center text-gray-600">
+            <MapPin className="w-4 h-4 mr-2" />
+            <span className="text-sm">{facility.location}</span>
+          </div>
+          <div className="flex items-center text-gray-600">
+            <Users className="w-4 h-4 mr-2" />
+            <span className="text-sm">Capacity: {facility.capacity}</span>
+          </div>
+          {facility.amenities && (
+            <div className="mt-3">
+              <p className="text-sm font-medium text-gray-700 mb-2">Amenities:</p>
+              <div className="flex flex-wrap gap-2">
+                {facility.amenities.map((amenity, index) => (
+                  <span 
+                    key={index}
+                    className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full"
+                  >
+                    {amenity}
+                  </span>
+                ))}
               </div>
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
-              <MapPin className="h-4 w-4" />
-              <span>{facility.location}</span>
-            </div>
-          </div>
-          
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-gray-500" />
-              <span className="text-sm">Capacity: {facility.capacity} people</span>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-gray-500" />
-              <span className="text-sm">Popularity: {facility.popularity}</span>
-            </div>
-            
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {facility.amenities.slice(0, 3).map((amenity, index) => (
-                <Badge key={index} variant="outline" className="text-xs py-0.5">
-                  {amenity}
-                </Badge>
-              ))}
-              {facility.amenities.length > 3 && (
-                <Badge variant="outline" className="text-xs py-0.5">
-                  +{facility.amenities.length - 3} more
-                </Badge>
-              )}
-            </div>
-          </div>
-          
-          <div className="mt-4 pt-4 border-t flex flex-col gap-2">
-            <div className="flex justify-between items-center text-sm text-gray-600">
-              <div className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                <span>{facility.availableSlots.length} available slots</span>
-              </div>
-              <motion.button 
-                onClick={showDetails}
-                whileHover={{ scale: 1.05 }}
-                className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
-              >
-                Details
-                <ChevronDown className="h-4 w-4" />
-              </motion.button>
-            </div>
-            <motion.div whileTap={{ scale: 0.97 }}>
-              <Button 
-                onClick={() => onBook(facility)} 
-                className="w-full bg-blue-600 hover:bg-blue-700"
-              >
-                Book Now
-              </Button>
-            </motion.div>
-          </div>
+          )}
         </div>
-      </Card>
+        <div className="flex gap-2 mt-auto">
+          <Button 
+            className="flex-1 bg-blue-600 hover:bg-blue-700"
+            onClick={() => onBook(facility)}
+          >
+            Quick Book
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="text-gray-600 hover:text-red-600"
+          >
+            <Heart className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </motion.div>
   );
 };
@@ -429,9 +391,9 @@ const SuccessModal = ({ isOpen, onClose }) => {
           <div className="bg-green-100 p-3 rounded-full mb-4">
             <CheckCircle className="h-10 w-10 text-green-600" />
           </div>
-          <h3 className="text-xl font-semibold mb-2">Booking Successful!</h3>
+          <h3 className="text-xl font-semibold mb-2">Booking Request Submitted!</h3>
           <p className="text-gray-600 text-center mb-6">
-            Your facility booking has been confirmed. A confirmation email has been sent to your account.
+            Your booking request has been submitted successfully. You will be notified once it's approved.
           </p>
           <Button onClick={onClose} className="bg-blue-600 hover:bg-blue-700">
             Done
@@ -444,637 +406,546 @@ const SuccessModal = ({ isOpen, onClose }) => {
 
 // Main Component
 const Facilities = () => {
-  const [selectedCategory, setSelectedCategory] = useState(facilitiesData.categories[0]);
+  const { user } = useAuthContext();
+  const [facilities, setFacilities] = useState([]);
+  const [userBookings, setUserBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [showBookingForm, setShowBookingForm] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [showBookings, setShowBookings] = useState(false);
   const [selectedFacility, setSelectedFacility] = useState(null);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filters, setFilters] = useState({
-    capacity: 0,
-    timeOfDay: 'any',
-    status: 'any'
-  });
-  const [favorites, setFavorites] = useState([]);
-  const [view, setView] = useState('grid');
-  const [notificationCount, setNotificationCount] = useState(2);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [availableFacilities, setAvailableFacilities] = useState(0);
+
+  // Facility images mapping
+  const facilityImages = {
+    'study-room': '/assets/images/facilities/study-room.jpg',
+    'computer-lab': '/assets/images/facilities/computer-lab.jpg',
+    'sports-facility': '/assets/images/facilities/sports.jpg',
+    'music-room': '/assets/images/facilities/music-room.jpg',
+    'auditorium': '/assets/images/facilities/auditorium.jpg',
+    'library': '/assets/images/facilities/library.jpg',
+  };
+
+  // Function to update facility availability
+  const updateFacilityAvailability = (facilityId, newStatus) => {
+    setFacilities(prevFacilities => {
+      const updatedFacilities = prevFacilities.map(facility => {
+        if (facility.id === facilityId) {
+          return { ...facility, status: newStatus };
+        }
+        return facility;
+      });
+      
+      // Update available count
+      const availableCount = updatedFacilities.filter(f => f.status === 'Available').length;
+      setAvailableFacilities(availableCount);
+      
+      return updatedFacilities;
+    });
+  };
 
   useEffect(() => {
-    // Simulate getting user data
-    const timeout = setTimeout(() => {
-      setFavorites([101, 301]); // IDs of facilities marked as favorites
-    }, 1500);
-    return () => clearTimeout(timeout);
-  }, []);
+    let unsubscribeNotifications = null;
+    let unsubscribeBookings = null;
+    
+    // Initialize facilities from categories
+    const initialFacilities = facilityCategories.reduce((acc, category) => {
+      return [...acc, ...category.facilities];
+    }, []);
+    setFacilities(initialFacilities);
+    
+    // Calculate initial available count
+    const availableCount = initialFacilities.filter(f => f.status === 'Available').length;
+    setAvailableFacilities(availableCount);
+
+    // Fetch facilities and their availability
+    const facilitiesRef = ref(database, 'facilities');
+    const unsubscribeFacilities = onValue(facilitiesRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const facilitiesData = [];
+        let availableCount = 0;
+        
+        snapshot.forEach((childSnapshot) => {
+          const facility = {
+            id: childSnapshot.key,
+            ...childSnapshot.val(),
+            image: facilityImages[childSnapshot.val().type] || '/assets/images/facilities/default.jpg'
+          };
+          facilitiesData.push(facility);
+          
+          if (facility.status === 'Available') {
+            availableCount++;
+          }
+        });
+        
+        setFacilities(facilitiesData);
+        setAvailableFacilities(availableCount);
+      }
+      setLoading(false);
+    });
+
+    // Fetch user's bookings and notifications if logged in
+    if (user) {
+      // Set up real-time listener for bookings
+      const bookingsRef = ref(database, 'facilityBookingRequests');
+      const userBookingsQuery = query(
+        bookingsRef,
+        orderByChild('userId'),
+        equalTo(user.uid)
+      );
+
+      unsubscribeBookings = onValue(userBookingsQuery, (snapshot) => {
+        const bookingsData = [];
+        
+        if (snapshot.exists()) {
+          snapshot.forEach((childSnapshot) => {
+            bookingsData.push({
+              id: childSnapshot.key,
+              ...childSnapshot.val()
+            });
+          });
+          
+          // Sort bookings by date
+          bookingsData.sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.date);
+            const dateB = new Date(b.createdAt || b.date);
+            return dateB - dateA;
+          });
+        }
+        
+        setUserBookings(bookingsData);
+      }, (error) => {
+        console.error('Error fetching bookings:', error);
+        setUserBookings([]);
+        toast.error('Failed to fetch your bookings');
+      });
+
+      // Set up real-time listener for notifications
+      const notificationsRef = ref(database, 'notifications');
+      const notificationsQuery = query(
+        notificationsRef,
+        orderByChild('recipient'),
+        equalTo(user.uid)
+      );
+      
+      unsubscribeNotifications = onValue(notificationsQuery, (snapshot) => {
+        const notificationsData = [];
+        let unreadCount = 0;
+        
+        if (snapshot.exists()) {
+          snapshot.forEach((childSnapshot) => {
+            const notification = childSnapshot.val();
+            // Only include facility-related notifications
+            if (notification.type === 'facility' || notification.requestId) {
+              notificationsData.push({
+                id: childSnapshot.key,
+                ...notification
+              });
+              if (!notification.read) {
+                unreadCount++;
+              }
+            }
+          });
+          
+          // Sort notifications by date
+          notificationsData.sort((a, b) => {
+            return new Date(b.createdAt) - new Date(a.createdAt);
+          });
+          
+          console.log('Facility notifications:', notificationsData); // Debug log
+        }
+        
+        setNotifications(notificationsData);
+        setUnreadNotifications(unreadCount);
+      }, (error) => {
+        console.error('Error fetching notifications:', error);
+        setNotifications([]);
+        setUnreadNotifications(0);
+      });
+    } else {
+      setUserBookings([]);
+      setNotifications([]);
+      setUnreadNotifications(0);
+    }
+
+    return () => {
+      if (unsubscribeFacilities) unsubscribeFacilities();
+      if (unsubscribeBookings) unsubscribeBookings();
+      if (unsubscribeNotifications) unsubscribeNotifications();
+    };
+  }, [user]);
 
   const handleBooking = (facility) => {
     setSelectedFacility(facility);
     setShowBookingForm(true);
   };
 
-  const handleShowDetails = (facility) => {
-    setSelectedFacility(facility);
-    setShowDetails(true);
-  };
-
-  const handleBookingSubmit = (formData) => {
-    // Here you would typically send the booking data to your backend
-    console.log('Booking submitted:', { facility: selectedFacility, ...formData });
+  const handleBookingSuccess = () => {
     setShowBookingForm(false);
-    // Show success message
-    setShowSuccess(true);
+    setShowSuccessModal(true);
+    // Refresh user bookings
+    if (user) {
+      const fetchUserBookings = async () => {
+        try {
+          const bookings = await getUserBookings(user.uid);
+          setUserBookings(bookings);
+        } catch (error) {
+          console.error('Error fetching user bookings:', error);
+          toast.error('Failed to refresh your bookings');
+        }
+      };
+      fetchUserBookings();
+    }
   };
 
-  const filteredFacilities = selectedCategory.facilities.filter(
-    facility => {
-      // Search filter
-      const nameMatch = facility.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const locationMatch = facility.location.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      // Apply other filters
-      let capacityMatch = true;
-      if (filters.capacity > 0) {
-        capacityMatch = facility.capacity >= filters.capacity;
-      }
-      
-      let statusMatch = true;
-      if (filters.status !== 'any') {
-        statusMatch = facility.status === filters.status;
-      }
-      
-      let timeMatch = true;
-      if (filters.timeOfDay !== 'any') {
-        // This is a simplification. In a real app, you'd have proper time filtering
-        if (filters.timeOfDay === 'morning') {
-          timeMatch = facility.availableSlots.some(slot => parseInt(slot) < 12);
-        } else if (filters.timeOfDay === 'afternoon') {
-          timeMatch = facility.availableSlots.some(slot => parseInt(slot) >= 12 && parseInt(slot) < 17);
-        } else if (filters.timeOfDay === 'evening') {
-          timeMatch = facility.availableSlots.some(slot => parseInt(slot) >= 17);
-        }
-      }
-      
-      return (nameMatch || locationMatch) && capacityMatch && statusMatch && timeMatch;
+  // Filter facilities based on search and category
+  const filteredFacilities = facilities.filter((facility) => {
+    const matchesSearch =
+      facility.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      facility.location.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory =
+      selectedCategory === 'all' || facility.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  // Popular facilities (example implementation)
+  const popularFacilities = facilities.slice(0, 3);
+
+  // Notifications Panel Component
+  const NotificationsPanel = ({ notifications }) => {
+    if (!notifications.length) {
+      return (
+        <div className="text-center py-4 text-gray-500">
+          No facility notifications
+        </div>
+      );
     }
-  );
+
+    return (
+      <div className="space-y-2">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`p-3 rounded-lg ${
+              notification.read ? 'bg-gray-50' : 'bg-blue-50'
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              <div className={`p-2 rounded-full ${
+                notification.status === 'approved' ? 'bg-green-100' :
+                notification.status === 'rejected' ? 'bg-red-100' :
+                'bg-blue-100'
+              }`}>
+                {notification.status === 'approved' ? (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                ) : notification.status === 'rejected' ? (
+                  <X className="w-4 h-4 text-red-600" />
+                ) : (
+                  <Info className="w-4 h-4 text-blue-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <h4 className="font-medium text-sm">{notification.title || 'Facility Booking Update'}</h4>
+                <p className="text-sm text-gray-600">{notification.message}</p>
+                <span className="text-xs text-gray-400 mt-1">
+                  {new Date(notification.createdAt).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header - Hero Banner */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="md:flex md:items-center md:justify-between">
-            <div className="md:w-1/2">
-              <motion.h1 
-                className="text-3xl font-bold tracking-tight"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-              >
-                Campus Facilities
-              </motion.h1>
-              <motion.p 
-                className="mt-2 text-lg text-blue-100"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-              >
-                Book study rooms, labs, and other campus resources
-              </motion.p>
-              <motion.div 
-                className="mt-6 flex gap-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-              >
-                <Button 
-                  variant="secondary"
-                  className="font-semibold shadow-sm"
-                >
-                  View Availability
-                </Button>
-                <Button 
-                variant="outline"
-                className="border-blue-500 text-blue-500 hover:bg-blue-50"
-              >
-                My Bookings
-              </Button>
-              </motion.div>
-            </div>
-            <motion.div 
-              className="hidden md:block mt-6 md:mt-0"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.4 }}
-            >
-              <div className="bg-white/10 backdrop-blur-sm p-6 rounded-lg border border-white/20 shadow-xl">
-                <div className="flex items-center gap-3 text-white mb-3">
-                  <Calendar className="h-5 w-5" />
-                  <span className="font-medium">Quick Booking Stats</span>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-white/20 backdrop-blur-sm p-3 rounded-md text-center">
-                    <div className="text-2xl font-bold">24</div>
-                    <div className="text-xs text-blue-100">Available Now</div>
-                  </div>
-                  <div className="bg-white/20 backdrop-blur-sm p-3 rounded-md text-center">
-                    <div className="text-2xl font-bold">132</div>
-                    <div className="text-xs text-blue-100">Weekly Bookings</div>
-                  </div>
-                  <div className="bg-white/20 backdrop-blur-sm p-3 rounded-md text-center">
-                    <div className="text-2xl font-bold">5</div>
-                    <div className="text-xs text-blue-100">Your Bookings</div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
+      {/* Dashboard Header */}
+      <div className="bg-white border-b border-gray-200 mb-6">
+        <div className="container mx-auto px-4 py-6">
+          <h1 className="text-3xl font-bold text-gray-900">Facility Booking Dashboard</h1>
+          <p className="text-gray-500 mt-2">Manage your facility bookings and check availability</p>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Search and Filters */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by name, location, or amenities..."
-                className="pl-10 pr-4 py-3 border border-gray-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      <div className="container mx-auto px-4 pb-8">
+        {/* Quick Stats Cards with enhanced styling */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <QuickStatsCard
+            icon={CheckCircle}
+            label="Available Now"
+            value={availableFacilities}
+            className="bg-gradient-to-br from-green-50 to-green-100 hover:shadow-lg transition-shadow transform hover:-translate-y-1"
+          />
+          <QuickStatsCard
+            icon={Calendar}
+            label="Your Bookings"
+            value={userBookings.length}
+            onClick={() => setShowBookings(!showBookings)}
+            className="bg-gradient-to-br from-blue-50 to-blue-100 hover:shadow-lg transition-shadow transform hover:-translate-y-1 cursor-pointer"
+          />
+          <QuickStatsCard
+            icon={Bell}
+            label="Notifications"
+            value={unreadNotifications}
+            className="bg-gradient-to-br from-purple-50 to-purple-100 hover:shadow-lg transition-shadow transform hover:-translate-y-1"
+          />
+        </div>
+
+        {/* Popular Facilities Section - Moved up */}
+        <section className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">Popular Facilities</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {facilities
+              .filter(f => f.rating >= 4.5)
+              .slice(0, 3)
+              .map(facility => (
+                <FacilityCard
+                  key={facility.id}
+                  facility={facility}
+                  onBook={handleBooking}
+                  popular
+                  onStatusChange={(newStatus) => updateFacilityAvailability(facility.id, newStatus)}
+                />
+              ))}
+          </div>
+        </section>
+
+        {/* Two Column Layout for Notifications and Bookings */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Notifications Panel */}
+          {user && (
+            <section className="lg:col-span-1">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-100 h-full">
+                <div className="p-4 border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-gray-900">Facility Notifications</h2>
+                    {unreadNotifications > 0 && (
+                      <Badge className="bg-blue-100 text-blue-800 px-2 py-1">
+                        {unreadNotifications} unread
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="p-4">
+                  <NotificationsPanel notifications={notifications} />
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Active Bookings Panel */}
+          {user && userBookings.length > 0 && showBookings && (
+            <section className="lg:col-span-1">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-100 h-full">
+                <div className="p-4 border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-gray-900">Your Bookings</h2>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setShowBookings(false)}
+                      className="hover:bg-gray-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="p-4 overflow-y-auto max-h-[500px]">
+                  <div className="grid gap-4">
+                    {userBookings.map((booking) => (
+                      <BookingCard key={booking.id} booking={booking} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+
+        {/* Search and Filter Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-8">
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                placeholder="Search facilities..."
+                className="pl-10 w-full"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="flex gap-3">
-              <div className="relative">
-                <Button 
-                  variant="outline" 
-                  className="flex items-center gap-2"
-                  onClick={() => setIsFilterOpen(!isFilterOpen)}
-                >
-                  <Filter className="h-4 w-4" />
-                  Filters
-                  <Badge className="ml-1 bg-blue-100 text-blue-700">
-                    {Object.values(filters).filter(val => val !== 'any' && val !== 0).length}
-                  </Badge>
-                </Button>
-                
-                {isFilterOpen && (
-                  <motion.div 
-                    className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-20"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    <div className="p-4 border-b">
-                      <h3 className="font-medium">Filter Options</h3>
-                    </div>
-                    <div className="p-4 space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Minimum Capacity</label>
-                        <select 
-                          className="w-full p-2 border rounded-md"
-                          value={filters.capacity}
-                          onChange={(e) => setFilters({...filters, capacity: parseInt(e.target.value)})}
-                        >
-                          <option value="0">Any capacity</option>
-                          <option value="1">1+ people</option>
-                          <option value="5">5+ people</option>
-                          <option value="10">10+ people</option>
-                          <option value="20">20+ people</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Time of Day</label>
-                        <select 
-                          className="w-full p-2 border rounded-md"
-                          value={filters.timeOfDay}
-                          onChange={(e) => setFilters({...filters, timeOfDay: e.target.value})}
-                        >
-                          <option value="any">Any time</option>
-                          <option value="morning">Morning</option>
-                          <option value="afternoon">Afternoon</option>
-                          <option value="evening">Evening</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Availability Status</label>
-                        <select 
-                          className="w-full p-2 border rounded-md"
-                          value={filters.status}
-                          onChange={(e) => setFilters({...filters, status: e.target.value})}
-                        >
-                          <option value="any">Any status</option>
-                          <option value="Available">Available</option>
-                          <option value="Limited">Limited</option>
-                        </select>
-                      </div>
-                      
-                      <div className="flex justify-between pt-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            setFilters({
-                              capacity: 0,
-                              timeOfDay: 'any',
-                              status: 'any'
-                            });
-                          }}
-                        >
-                          Reset All
-                        </Button>
-                        <Button 
-                          size="sm"
-                          onClick={() => setIsFilterOpen(false)}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          Apply
-                        </Button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </div>
-              
-              <div className="flex items-center border rounded-md overflow-hidden">
-                <button 
-                  className={`p-2 ${view === 'grid' ? 'bg-blue-50 text-blue-600' : 'bg-white text-gray-500'}`}
-                  onClick={() => setView('grid')}
-                  title="Grid View"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="7" height="7" />
-                    <rect x="14" y="3" width="7" height="7" />
-                    <rect x="3" y="14" width="7" height="7" />
-                    <rect x="14" y="14" width="7" height="7" />
-                  </svg>
-                </button>
-                <button 
-                  className={`p-2 ${view === 'list' ? 'bg-blue-50 text-blue-600' : 'bg-white text-gray-500'}`}
-                  onClick={() => setView('list')}
-                  title="List View"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="8" y1="6" x2="21" y2="6" />
-                    <line x1="8" y1="12" x2="21" y2="12" />
-                    <line x1="8" y1="18" x2="21" y2="18" />
-                    <line x1="3" y1="6" x2="3.01" y2="6" />
-                    <line x1="3" y1="12" x2="3.01" y2="12" />
-                    <line x1="3" y1="18" x2="3.01" y2="18" />
-                  </svg>
-                </button>
-              </div>
-              
-              <div className="relative">
-                <Button variant="ghost" className="relative">
-                  <Bell className="h-5 w-5" />
-                  {notificationCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 rounded-full text-white text-xs w-5 h-5 flex items-center justify-center">
-                      {notificationCount}
-                    </span>
-                  )}
-                </Button>
-              </div>
-            </div>
+            <Button variant="outline" className="gap-2 whitespace-nowrap">
+              <Filter className="h-4 w-4" />
+              Filters
+            </Button>
           </div>
         </div>
 
-        {/* Category Tabs */}
-        <Tabs 
-          value={selectedCategory.id.toString()} 
-          onValueChange={(value) => setSelectedCategory(facilitiesData.categories.find(cat => cat.id === parseInt(value)))}
-          className="mb-8"
-        >
-          <motion.div 
-            className="bg-white p-1 rounded-xl shadow-sm overflow-x-auto hide-scrollbar"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <TabsList className="inline-flex min-w-full bg-transparent p-1 space-x-1">
-              {facilitiesData.categories.map((category) => (
+        {/* Facilities Grid */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+          <Tabs defaultValue="all" className="w-full">
+            <TabsList className="mb-6 flex flex-wrap gap-2 border-b border-gray-200 w-full pb-2">
+              <TabsTrigger 
+                value="all" 
+                className="px-4 py-2 rounded-lg hover:bg-gray-100 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
+              >
+                All Facilities
+              </TabsTrigger>
+              {facilityCategories.map(category => (
                 <TabsTrigger 
                   key={category.id} 
-                  value={category.id.toString()}
-                  className={`px-4 py-2 rounded-lg data-[state=active]:bg-blue-600 data-[state=active]:text-white`}
+                  value={category.id}
+                  className="px-4 py-2 rounded-lg hover:bg-gray-100 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 flex items-center gap-2"
                 >
-                  <div className="flex items-center gap-2">
-                    <div className={`rounded-md p-1 ${category.color.split(' ')[0]} ${selectedCategory.id === category.id ? 'bg-blue-500 text-white' : category.color}`}>
-                      {React.createElement(category.icon, { className: "h-4 w-4" })}
-                    </div>
-                    {category.name}
-                  </div>
+                  <category.icon className="h-4 w-4" />
+                  {category.name}
                 </TabsTrigger>
               ))}
             </TabsList>
-          </motion.div>
 
-          {/* Active Tab Description */}
-          {selectedCategory && (
-            <motion.div 
-              className="bg-white rounded-lg p-4 mb-6 shadow-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              key={selectedCategory.id}
-            >
-              <div className="flex items-start gap-4">
-                <div className={`rounded-full p-2 ${selectedCategory.color}`}>
-                  {React.createElement(selectedCategory.icon, { className: "h-6 w-6" })}
-                </div>
-                <div>
-                  <h2 className="text-lg font-medium">{selectedCategory.name}</h2>
-                  <p className="text-gray-600">{selectedCategory.description}</p>
-                </div>
+            <TabsContent value="all" className="mt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {facilities
+                  .filter(facility => 
+                    facility.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    facility.location.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map(facility => (
+                    <FacilityCard
+                      key={facility.id}
+                      facility={facility}
+                      onBook={handleBooking}
+                      onStatusChange={(newStatus) => updateFacilityAvailability(facility.id, newStatus)}
+                    />
+                  ))}
               </div>
-            </motion.div>
-          )}
+            </TabsContent>
 
-          {/* Facilities Lists */}
-          {selectedCategory && (
-            <TabsContent value={selectedCategory.id.toString()}>
-              {filteredFacilities && filteredFacilities.length > 0 ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ staggerChildren: 0.1 }}
-                  layout
-                >
-                  {view === 'grid' ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {filteredFacilities.map((facility) => (
+            {facilityCategories.map(category => (
+              <TabsContent key={category.id} value={category.id} className="mt-6">
+                <div className="space-y-6">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900">{category.name}</h2>
+                      <p className="text-gray-500 mt-1">{category.description}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {facilities
+                      .filter(facility => 
+                        facility.type === category.id &&
+                        (facility.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         facility.location.toLowerCase().includes(searchQuery.toLowerCase()))
+                      )
+                      .map(facility => (
                         <FacilityCard
                           key={facility.id}
                           facility={facility}
                           onBook={handleBooking}
-                          showDetails={() => handleShowDetails(facility)}
+                          onStatusChange={(newStatus) => updateFacilityAvailability(facility.id, newStatus)}
                         />
                       ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {filteredFacilities.map((facility) => (
-                        <motion.div
-                          key={facility.id}
-                          whileHover={{ scale: 1.01 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <Card className={`overflow-hidden ${facility.bgColor} border border-gray-200`}>
-                            <div className="flex flex-col md:flex-row">
-                              <div className="md:w-48 aspect-video md:aspect-square relative">
-                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-800 to-gray-600">
-                                  <Building className="h-10 w-10 text-white opacity-50" />
-                                </div>
-                                <div className="absolute top-2 left-2">
-                                  <StatusBadge status={facility.status} />
-                                </div>
-                              </div>
-                              <div className="p-4 flex-1">
-                                <div className="flex justify-between items-start">
-                                  <div>
-                                    <h3 className="text-lg font-semibold">{facility.name}</h3>
-                                    <div className="flex items-center gap-1 text-gray-600 mt-1">
-                                      <MapPin className="h-4 w-4" />
-                                      <span className="text-sm">{facility.location}</span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-yellow-500">
-                                    <Star className="h-4 w-4 fill-yellow-500" />
-                                    <span className="font-medium">{facility.rating}</span>
-                                  </div>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3">
-                                  <div className="flex items-center gap-2">
-                                    <Users className="h-4 w-4 text-gray-500" />
-                                    <span className="text-sm">Capacity: {facility.capacity}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Clock className="h-4 w-4 text-gray-500" />
-                                    <span className="text-sm">{facility.availableSlots.length} available slots</span>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex flex-wrap gap-1 mt-3">
-                                  {facility.amenities.slice(0, 3).map((amenity, index) => (
-                                    <Badge key={index} variant="outline" className="text-xs">
-                                      {amenity}
-                                    </Badge>
-                                  ))}
-                                  {facility.amenities.length > 3 && (
-                                    <Badge variant="outline" className="text-xs">
-                                      +{facility.amenities.length - 3} more
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="p-4 flex flex-row md:flex-col justify-between md:border-l border-gray-200">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleShowDetails(facility)}
-                                  className="flex items-center gap-1"
-                                >
-                                  Details
-                                  <ChevronDown className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleBooking(facility)}
-                                  className="bg-blue-600 hover:bg-blue-700"
-                                >
-                                  Book Now
-                                </Button>
-                              </div>
-                            </div>
-                          </Card>
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
-                </motion.div>
-              ) : (
-                <div className="bg-white rounded-lg p-12 text-center">
-                  <div className="mx-auto w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-                    <Search className="h-12 w-12 text-gray-400" />
                   </div>
-                  <h3 className="text-xl font-medium text-gray-900 mb-2">No facilities found</h3>
-                  <p className="text-gray-500 mb-6">
-                    Try adjusting your search or filter criteria
-                  </p>
-                  <Button 
-                    onClick={() => {
-                      setSearchQuery('');
-                      setFilters({
-                        capacity: 0,
-                        timeOfDay: 'any',
-                        status: 'any'
-                      });
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Reset All Filters
-                  </Button>
                 </div>
-              )}
-            </TabsContent>
-          )}
-        </Tabs>
-      </div>
-      
-      {/* Popular Facilities Section */}
-      <div className="bg-gradient-to-r from-gray-100 to-gray-200 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold">Popular Facilities</h2>
-            <p className="text-gray-600 mt-2">Most frequently booked spaces on campus</p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {facilitiesData.categories.flatMap(cat => cat.facilities)
-              .sort((a, b) => b.rating - a.rating)
-              .slice(0, 3)
-              .map(facility => (
-                <motion.div
-                  key={facility.id}
-                  whileHover={{ y: -5 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Card className="overflow-hidden shadow-md hover:shadow-xl transition-shadow">
-                    <div className="relative h-40 bg-gradient-to-br from-gray-800 to-gray-600">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Building className="h-12 w-12 text-white opacity-50" />
-                      </div>
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
-                      <div className="absolute bottom-4 left-4 right-4">
-                        <h3 className="text-xl font-semibold text-white">{facility.name}</h3>
-                        <div className="flex items-center justify-between mt-1">
-                          <div className="flex items-center gap-1 text-white/90">
-                            <MapPin className="h-3.5 w-3.5" />
-                            <span className="text-sm">{facility.location}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-yellow-400">
-                            <Star className="h-4 w-4 fill-yellow-400" />
-                            <span className="font-medium">{facility.rating}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <Users className="h-4 w-4 text-gray-500" />
-                          <span className="text-sm text-gray-600">Capacity: {facility.capacity}</span>
-                        </div>
-                        <StatusBadge status={facility.status} />
-                      </div>
-                      <Button 
-                        onClick={() => handleBooking(facility)} 
-                        className="w-full mt-4 bg-blue-600 hover:bg-blue-700"
-                      >
-                        Quick Book
-                      </Button>
-                    </div>
-                  </Card>
-                </motion.div>
-              ))
-            }
-          </div>
+              </TabsContent>
+            ))}
+          </Tabs>
         </div>
-      </div>
 
-      {/* Quick Booking Tips */}
-      <div className="bg-white py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold">Booking Tips</h2>
-            <p className="text-gray-600 mt-2">Make the most of campus facilities</p>
+        {/* Booking Tips Section */}
+        <section className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">Booking Tips</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <BookingTipCard
+              icon={Calendar}
+              title="Book in Advance"
+              description="Reserve your space early to ensure availability, especially for popular time slots."
+            />
+            <BookingTipCard
+              icon={Clock}
+              title="Check Availability"
+              description="Review the facility schedule to find the perfect time for your booking."
+            />
+            <BookingTipCard
+              icon={Bell}
+              title="Set Reminders"
+              description="Don't forget your booking! Set up notifications to stay on track."
+            />
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="flex flex-col items-center text-center p-6">
-              <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-4">
-                <Calendar className="h-8 w-8 text-blue-600" />
-              </div>
-              <h3 className="text-lg font-medium mb-2">Book in Advance</h3>
-              <p className="text-gray-600">
-                Popular facilities fill up quickly. Book at least 48 hours in advance to secure your spot.
-              </p>
-            </div>
-            
-            <div className="flex flex-col items-center text-center p-6">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                <Clock className="h-8 w-8 text-green-600" />
-              </div>
-              <h3 className="text-lg font-medium mb-2">Check Availability</h3>
-              <p className="text-gray-600">
-                Morning slots tend to be less crowded. Choose off-peak hours for a better experience.
-              </p>
-            </div>
-            
-            <div className="flex flex-col items-center text-center p-6">
-              <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center mb-4">
-                <Bell className="h-8 w-8 text-purple-600" />
-              </div>
-              <h3 className="text-lg font-medium mb-2">Set Reminders</h3>
-              <p className="text-gray-600">
-                Enable notifications to get reminders about your upcoming bookings and available slots.
-              </p>
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
 
       {/* Modals */}
-      {selectedFacility && (
-        <>
-          {showBookingForm && (
-            <div
-              className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                zIndex: 50,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '1rem',
-              }}
-            >
-              <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto relative">
-                <BookingRequestForm 
-                  onClose={() => {
-                    setShowBookingForm(false);
-                    setSelectedFacility(null);
-                  }} 
-                />
-              </div>
-            </div>
-          )}
-          
-          <FacilityDetails
+      <AnimatePresence>
+        {showBookingForm && selectedFacility && (
+          <BookingRequestForm
             facility={selectedFacility}
-            isOpen={showDetails}
-            onClose={() => setShowDetails(false)}
-            onBook={handleBooking}
+            onClose={() => setShowBookingForm(false)}
+            onSuccess={handleBookingSuccess}
           />
-        </>
-      )}
-      
-      <SuccessModal
-        isOpen={showSuccess}
-        onClose={() => setShowSuccess(false)}
-      />
+        )}
+        {showSuccessModal && (
+          <SuccessModal
+            isOpen={showSuccessModal}
+            onClose={() => setShowSuccessModal(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
+
+// Separate BookingCard component for better organization
+const BookingCard = ({ booking }) => (
+  <Card className="p-4 hover:shadow-md transition-shadow">
+    <div className="flex justify-between items-start mb-4">
+      <div>
+        <h3 className="font-medium text-gray-900">{booking.facilityName}</h3>
+        <p className="text-sm text-gray-500">{booking.purpose}</p>
+      </div>
+      <Badge
+        className={
+          booking.status === 'approved'
+            ? 'bg-green-100 text-green-800'
+            : booking.status === 'rejected'
+            ? 'bg-red-100 text-red-800'
+            : 'bg-yellow-100 text-yellow-800'
+        }
+      >
+        {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+      </Badge>
+    </div>
+    <div className="space-y-2 text-sm text-gray-600">
+      <div className="flex items-center">
+        <Calendar className="w-4 h-4 mr-2 text-gray-400" />
+        {new Date(booking.date).toLocaleDateString()}
+      </div>
+      <div className="flex items-center">
+        <Clock className="w-4 h-4 mr-2 text-gray-400" />
+        {booking.timeSlot}
+      </div>
+      {booking.statusMessage && (
+        <div className="flex items-center text-sm mt-2 p-2 bg-gray-50 rounded">
+          <Info className="w-4 h-4 mr-2 text-blue-500" />
+          {booking.statusMessage}
+        </div>
+      )}
+    </div>
+  </Card>
+);
 
 export default Facilities;

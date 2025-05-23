@@ -15,21 +15,21 @@ import { Button } from '../../ui/button';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { X, Upload, Paperclip, CalendarIcon } from 'lucide-react';
+import { X, Upload, Paperclip, CalendarIcon, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+import { getDatabase, ref, push, set } from 'firebase/database';
+import { firebaseAuthService } from '../../../services/firebaseAuth.service';
 
 // Define validation schema for candidate application form
 const candidateFormSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  position: z.enum(['President', 'Vice President', 'Secretary', 'Treasurer', 'Student Representative', 'Other'], {
-    required_error: 'Please select a position',
-  }),
+  position: z.string().min(1, 'Please select a position'),
   manifesto: z.string().min(50, 'Manifesto must be at least 50 characters'),
   applicationDate: z.string().min(1, 'Please select a date').refine(date => !isNaN(new Date(date).getTime()), 'Please enter a valid date'),
-  // documents: z.array(z.instanceof(File)).optional(), 
+  // documents: z.array(z.instanceof(File)).optional(),
 });
 
-const CandidateApplicationForm = ({ onClose }) => {
+const CandidateApplicationForm = ({ onClose, electionPositions = [] }) => {
   const form = useForm({
     resolver: zodResolver(candidateFormSchema),
     defaultValues: {
@@ -42,7 +42,7 @@ const CandidateApplicationForm = ({ onClose }) => {
   });
 
   // Define college-level election positions
-  const collegePositions = [
+  const collegePositions = electionPositions.length > 0 ? electionPositions : [
     { value: 'President', label: 'President' },
     { value: 'Vice President', label: 'Vice President' },
     { value: 'Secretary', label: 'Secretary' },
@@ -52,11 +52,38 @@ const CandidateApplicationForm = ({ onClose }) => {
   ];
 
   const onSubmit = async (data) => {
+    const currentUser = await firebaseAuthService.getCurrentUser();
+    if (!currentUser || !currentUser.authUser) {
+      toast.error('You must be logged in to apply.');
+      return;
+    }
+
+    const studentId = currentUser.authUser.uid;
+    const database = getDatabase();
+    const candidatesRef = ref(database, 'election_candidates');
+
     try {
-      // TODO: Replace with actual API call to submit candidate application
-      console.log('Candidate Application submitted:', data);
+      // Use push to generate a unique ID for the new candidate
+      const newCandidateRef = push(candidatesRef);
+      const candidateId = newCandidateRef.key;
+
+      const applicationData = {
+        id: candidateId, // Store the generated ID
+        studentId: studentId, // Link to the student user
+        name: data.name,
+        position: data.position,
+        manifesto: data.manifesto,
+        applicationDate: new Date(data.applicationDate).toISOString(), // Store as ISO string
+        status: 'pending', // Initial status
+        createdAt: new Date().toISOString(),
+      };
+
+      await set(newCandidateRef, applicationData);
+
       toast.success('Candidate application submitted successfully!');
+      form.reset(); // Reset form fields
       onClose(); // Close modal on success
+
     } catch (error) {
       toast.error('Failed to submit candidate application. Please try again.');
       console.error('Error submitting candidate application:', error);
@@ -158,7 +185,7 @@ const CandidateApplicationForm = ({ onClose }) => {
           />
 
           {/* File Upload Field (Optional) */}
-          {/* 
+          {/*
           <FormField
             control={form.control}
             name="documents"
@@ -166,7 +193,7 @@ const CandidateApplicationForm = ({ onClose }) => {
               <FormItem>
                 <FormLabel>Supporting Documents (Optional)</FormLabel>
                 <FormControl>
-                  <Input 
+                  <Input
                     type="file"
                     multiple
                     onChange={(e) => field.onChange(e.target.files)}
@@ -182,10 +209,11 @@ const CandidateApplicationForm = ({ onClose }) => {
           */}
 
           <div className="flex justify-end gap-4 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={form.formState.isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Submit Application
             </Button>
           </div>

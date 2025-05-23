@@ -8,9 +8,7 @@ import {
   FileText,
   AlertCircle,
   Settings,
-  LogOut,
-  Calendar,
-  BookOpen
+  LogOut
 } from 'lucide-react';
 
 const StudentMenu = () => {
@@ -30,11 +28,6 @@ const StudentMenu = () => {
     { id: 'facilities', icon: <Building size={20} />, label: 'Facilities', link: '/student/facilities' },
     { id: 'applications', icon: <FileText size={20} />, label: 'Applications', link: '/student/applications' },
     { id: 'complaints', icon: <AlertCircle size={20} />, label: 'Complaints', link: '/student/complaints' }
-  ];
-
-  const roleSpecificItems = [
-    { id: 'my-bookings', icon: <Calendar size={20} />, label: 'My Bookings', link: '/student/bookings' },
-    { id: 'my-courses', icon: <BookOpen size={20} />, label: 'My Courses', link: '/student/courses' }
   ];
 
   return (
@@ -57,23 +50,6 @@ const StudentMenu = () => {
               className="flex items-center px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
               <span className="mr-3 text-gray-500">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
-
-      {/* Role Specific */}
-      <div className="py-4">
-        <p className="px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">ROLE SPECIFIC</p>
-        <nav className="mt-2">
-          {roleSpecificItems.map((item) => (
-            <Link
-              key={item.id}
-              to={item.link}
-              className="flex items-center px-4 py-2 text-sm font-medium text-blue-600 hover:bg-gray-100"
-            >
-              <span className="mr-3 text-blue-500">{item.icon}</span>
               {item.label}
             </Link>
           ))}

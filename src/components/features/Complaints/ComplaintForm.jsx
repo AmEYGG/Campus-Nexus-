@@ -1,4 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { ref, push, serverTimestamp, update, set, get } from 'firebase/database';
+import { database, auth } from '../../../config/firebase';
+import { cloudinaryConfig } from '../../../config/cloudinary';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { toast } from 'react-hot-toast';
 import {
   Dialog,
   DialogContent,
@@ -16,12 +21,13 @@ import {
   FormMessage,
 } from '../../ui/form';
 import { Input } from '../../ui/input';
-import { Select } from '../../ui/select';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../../ui/select';
 import { Textarea } from '../../ui/textarea';
 import { Calendar, FileText, Users, X, Upload, Paperclip } from 'lucide-react';
 import { Badge } from '../../ui/badge';
 
 const ComplaintForm = ({ onClose, onSubmit }) => {
+  const [user] = useAuthState(auth);
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     subject: '',
@@ -34,7 +40,11 @@ const ComplaintForm = ({ onClose, onSubmit }) => {
     date: '',
     witnesses: '',
     resolution: '',
+    courseCode: ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const fileInputRef = useRef(null);
 
   const steps = [
     { id: 1, name: 'Basic Details' },
@@ -64,16 +74,175 @@ const ComplaintForm = ({ onClose, onSubmit }) => {
     });
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFileChange = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+
+    // Validate files
+    for (const file of files) {
+      if (file.size > maxSize) {
+        toast.error(`File ${file.name} is too large. Maximum size is 5MB`);
+        return;
+      }
+      if (!allowedTypes.includes(file.type)) {
+        toast.error(`File ${file.name} is not supported. Please upload images or PDFs`);
+        return;
+      }
+    }
+
+    setUploadedFiles(files);
+  };
+
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', cloudinaryConfig.uploadPreset);
+    formData.append('folder', cloudinaryConfig.folder);
+
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/auto/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const data = await response.json();
+      return {
+        name: file.name,
+        url: data.secure_url,
+        public_id: data.public_id,
+        type: file.type
+      };
+    } catch (error) {
+      console.error('Error uploading to Cloudinary:', error);
+      throw error;
+    }
+  };
+
+  const uploadFiles = async () => {
+    try {
+      const uploadPromises = uploadedFiles.map(file => uploadToCloudinary(file));
+      return await Promise.all(uploadPromises);
+    } catch (error) {
+      console.error('Error uploading files:', error);
+      throw error;
+    }
+  };
+
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     
     if (step < steps.length) {
       setStep(step + 1);
-    } else {
-      // Submit the form data to the parent component
-      onSubmit(formData);
+      return;
+    }
+
+    if (!user) {
+      toast.error('You must be logged in to submit a complaint');
+      return;
+    }
+
+    if (!formData.subject || !formData.category || !formData.priority || !formData.description) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Upload files to Cloudinary first if any
+      const uploadedFileUrls = uploadedFiles.length > 0 ? await uploadFiles() : [];
+
+      // Generate a unique complaint ID
+      const complaintId = `CMP${Date.now()}${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+
+      // Create the base complaint data
+      const complaintData = {
+        id: complaintId,
+        subject: formData.subject,
+        description: formData.description,
+        category: formData.category,
+        priority: formData.priority,
+        status: 'pending',
+        submittedAt: serverTimestamp(),
+        lastUpdated: serverTimestamp(),
+        files: uploadedFileUrls,
+        location: formData.location || null,
+        date: formData.date || null,
+        witnesses: formData.witnesses || null,
+        courseCode: formData.category === 'academic' ? formData.courseCode : null,
+        department: user.userProfile?.department || 'Not Specified',
+        semester: user.userProfile?.semester || 'Not Specified',
+        impact: formData.impact || 'Not Specified',
+        suggestedResolution: formData.resolution || null,
+        anonymousId: `ANON${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+        studentId: user.uid,
+        studentName: formData.anonymous ? 'Anonymous' : user.displayName || 'Anonymous',
+        studentEmail: formData.anonymous ? null : user.email,
+        // Include notification data in the complaint itself
+        notifications: {
+          student: {
+            type: 'complaint_submitted',
+            message: `Your complaint has been submitted successfully and is pending review.`,
+            createdAt: serverTimestamp(),
+            read: false
+          },
+          faculty: {
+            type: 'new_complaint',
+            message: `New complaint submitted for review`,
+            createdAt: serverTimestamp(),
+            read: false
+          }
+        }
+      };
+
+      // Create the complaint in the complaintRequests collection
+      const complaintsRef = ref(database, `complaintRequests/${complaintId}`);
+      await set(complaintsRef, complaintData);
+
+      // Create a reference in the user's complaints collection
+      const userComplaintRef = ref(database, `users/${user.uid}/complaints/${complaintId}`);
+      await set(userComplaintRef, {
+        id: complaintId,
+        status: 'pending',
+        submittedAt: serverTimestamp(),
+        category: formData.category,
+        subject: formData.subject,
+        anonymousId: complaintData.anonymousId
+      });
+
+      // Try to create user notification, but don't fail if it doesn't work
+      try {
+        const userNotificationRef = ref(database, `users/${user.uid}/notifications/${complaintId}`);
+        await set(userNotificationRef, {
+          type: 'complaint_submitted',
+          complaintId: complaintId,
+          status: 'pending',
+          message: `Your complaint (ID: ${complaintData.anonymousId}) has been submitted successfully and is pending review.`,
+          createdAt: serverTimestamp(),
+          read: false
+        });
+      } catch (notificationError) {
+        console.warn('Failed to create user notification:', notificationError);
+        // Continue with submission process
+      }
+
+      toast.success('Complaint submitted successfully!');
       
-      // Reset form data
+      if (onSubmit) {
+        onSubmit(complaintData);
+      }
+
+      // Reset form
       setFormData({
         subject: '',
         description: '',
@@ -85,13 +254,53 @@ const ComplaintForm = ({ onClose, onSubmit }) => {
         date: '',
         witnesses: '',
         resolution: '',
+        courseCode: ''
       });
-      
-      // Reset steps
+      setUploadedFiles([]);
       setStep(1);
-      
-      // Close the dialog
       onClose();
+    } catch (error) {
+      console.error('Error submitting complaint:', error);
+      // Check if the complaint was actually saved despite the notification error
+      try {
+        const complaintRef = ref(database, `complaintRequests/${complaintId}`);
+        const snapshot = await get(complaintRef);
+        if (snapshot.exists()) {
+          // Complaint was saved successfully despite notification error
+          toast.success('Complaint submitted successfully!');
+          if (onSubmit) {
+            onSubmit(complaintData);
+          }
+          setFormData({
+            subject: '',
+            description: '',
+            category: '',
+            priority: 'medium',
+            anonymous: false,
+            files: [],
+            location: '',
+            date: '',
+            witnesses: '',
+            resolution: '',
+            courseCode: ''
+          });
+          setUploadedFiles([]);
+          setStep(1);
+          onClose();
+          return;
+        }
+      } catch (checkError) {
+        console.error('Error checking complaint status:', checkError);
+      }
+
+      // Only show error if the complaint wasn't actually saved
+      if (error.code === 'PERMISSION_DENIED') {
+        toast.error('Permission denied. Please make sure you are properly logged in.');
+      } else {
+        toast.error('Failed to submit complaint. Please try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
@@ -108,6 +317,7 @@ const ComplaintForm = ({ onClose, onSubmit }) => {
       date: '',
       witnesses: '',
       resolution: '',
+      courseCode: ''
     });
     setStep(1);
     onClose();
@@ -191,11 +401,31 @@ const ComplaintForm = ({ onClose, onSubmit }) => {
                 <Select
                   name="priority"
                   value={formData.priority}
-                  onChange={handleChange}
+                  onValueChange={(value) => setFormData({ ...formData, priority: value })}
                 >
-                  <option value="low">Low Priority</option>
-                  <option value="medium">Medium Priority</option>
-                  <option value="high">High Priority</option>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select priority level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        Low Priority
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="medium">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                        Medium Priority
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="high">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                        High Priority
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
                 </Select>
               </div>
 
@@ -288,14 +518,47 @@ const ComplaintForm = ({ onClose, onSubmit }) => {
                   <p className="text-sm text-gray-500 mb-4">
                     Drag and drop your files here, or click to browse
                   </p>
+                  <input
+                    type="file"
+                    multiple
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                    accept="image/jpeg,image/png,application/pdf"
+                  />
                   <Button
                     type="button"
                     variant="outline"
                     className="flex items-center"
+                    onClick={() => fileInputRef.current?.click()}
                   >
                     <Paperclip className="h-4 w-4 mr-2" />
                     Choose Files
                   </Button>
+                  {uploadedFiles.length > 0 && (
+                    <div className="mt-4 w-full">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Selected Files:</h4>
+                      <div className="space-y-2">
+                        {uploadedFiles.map((file, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <div className="flex items-center">
+                              <FileText className="h-4 w-4 text-gray-400 mr-2" />
+                              <span className="text-sm text-gray-600">{file.name}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-red-500 hover:text-red-700"
+                              onClick={() => {
+                                setUploadedFiles(files => files.filter((_, i) => i !== index));
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -314,14 +577,21 @@ const ComplaintForm = ({ onClose, onSubmit }) => {
                   handleClose();
                 }
               }}
+              disabled={isSubmitting}
             >
               {step === 1 ? 'Cancel' : 'Back'}
             </Button>
             <Button 
               type="submit"
               className="bg-orange-500 hover:bg-orange-600"
+              disabled={isSubmitting}
             >
-              {step === steps.length ? 'Submit Complaint' : 'Next'}
+              {isSubmitting 
+                ? 'Submitting...' 
+                : step === steps.length 
+                  ? 'Submit Complaint' 
+                  : 'Next'
+              }
             </Button>
           </div>
         </DialogFooter>

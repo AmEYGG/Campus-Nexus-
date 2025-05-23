@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -38,62 +38,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '../../ui/alert-dialog';
-import { toast } from '../../ui/use-toast';
+import toast from 'react-hot-toast';
 import { Skeleton } from '../../ui/skeleton';
 import { motion, AnimatePresence } from 'framer-motion';
-
-// Mock data for applications
-const mockApplications = {
-  pending: [
-    {
-      id: 1,
-      type: 'Leave Application',
-      submittedDate: '2024-03-10',
-      status: 'Pending',
-      subject: 'Medical Leave Request',
-      description: 'Request for medical leave due to health issues',
-      documents: ['medical_certificate.pdf'],
-      urgency: 'High'
-    },
-    {
-      id: 2,
-      type: 'Course Change',
-      submittedDate: '2024-03-08',
-      status: 'Under Review',
-      subject: 'Request to Change Elective Course',
-      description: 'Request to switch from Advanced Mathematics to Data Science',
-      documents: ['course_form.pdf'],
-      urgency: 'Medium'
-    }
-  ],
-  approved: [
-    {
-      id: 3,
-      type: 'Scholarship',
-      submittedDate: '2024-02-15',
-      approvedDate: '2024-02-20',
-      status: 'Approved',
-      subject: 'Merit Scholarship Application',
-      description: 'Application for academic merit scholarship',
-      documents: ['transcript.pdf', 'recommendation.pdf'],
-      urgency: 'Medium'
-    }
-  ],
-  rejected: [
-    {
-      id: 4,
-      type: 'Event Permission',
-      submittedDate: '2024-02-01',
-      rejectedDate: '2024-02-03',
-      status: 'Rejected',
-      subject: 'Tech Fest Event Permission',
-      description: 'Permission to organize technical workshop',
-      documents: ['event_proposal.pdf'],
-      reason: 'Venue not available for the requested dates',
-      urgency: 'Low'
-    }
-  ]
-};
+import { database } from '@/config/firebase';
+import { ref, onValue, query, orderByChild, equalTo, update, remove, get, push } from 'firebase/database';
+import { useAuthContext } from '@/providers/AuthProvider';
+import ApplicationForm from './ApplicationForm';
 
 const applicationTypes = [
   {
@@ -167,10 +118,14 @@ const StatusBadge = ({ status }) => {
 // Urgency Badge Component
 const UrgencyBadge = ({ level }) => {
   let colorClass = '';
+  const displayLevel = level || 'normal';
   
-  switch (level.toLowerCase()) {
-    case 'high':
+  switch (displayLevel.toLowerCase()) {
+    case 'urgent':
       colorClass = 'text-red-600 border-red-200 bg-red-50';
+      break;
+    case 'high':
+      colorClass = 'text-orange-600 border-orange-200 bg-orange-50';
       break;
     case 'medium':
       colorClass = 'text-amber-600 border-amber-200 bg-amber-50';
@@ -184,7 +139,7 @@ const UrgencyBadge = ({ level }) => {
 
   return (
     <Badge variant="outline" className={`${colorClass} py-1`}>
-      {level} Priority
+      {displayLevel.charAt(0).toUpperCase() + displayLevel.slice(1)} Priority
     </Badge>
   );
 };
@@ -311,6 +266,25 @@ const ApplicationDetail = ({ application, isOpen, onClose }) => {
 const ApplicationCard = ({ application, onViewDetail }) => {
   const [isHovered, setIsHovered] = useState(false);
   
+  // Format the admin response time
+  const formatResponseTime = (timestamp) => {
+    if (!timestamp) return null;
+    const date = new Date(timestamp);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Get priority level with fallback
+  const getPriorityLevel = () => {
+    if (!application) return 'normal';
+    return application.priority || application.urgency || 'normal';
+  };
+  
   return (
     <Card 
       className={`overflow-hidden transition-all duration-300 ${
@@ -334,12 +308,54 @@ const ApplicationCard = ({ application, onViewDetail }) => {
 
         <p className="mt-4 text-gray-700 line-clamp-2">{application.description}</p>
 
+        {/* Admin Response Section */}
+        {application.adminResponse && (
+          <div className={`mt-4 p-3 rounded-lg ${
+            application.status === 'approved' ? 'bg-green-50 border border-green-100' :
+            application.status === 'rejected' ? 'bg-red-50 border border-red-100' :
+            'bg-gray-50 border border-gray-100'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-full ${
+                application.status === 'approved' ? 'bg-green-100' :
+                application.status === 'rejected' ? 'bg-red-100' :
+                'bg-gray-100'
+              }`}>
+                {application.status === 'approved' ? (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                ) : application.status === 'rejected' ? (
+                  <XCircle className="w-4 h-4 text-red-600" />
+                ) : (
+                  <Clock className="w-4 h-4 text-gray-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">
+                  {application.status === 'approved' ? 'Application Approved' :
+                   application.status === 'rejected' ? 'Application Rejected' :
+                   'Under Review'}
+                </p>
+                {application.adminResponse.comment && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    {application.adminResponse.comment}
+                  </p>
+                )}
+                {application.adminResponse.reviewedAt && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Reviewed on {formatResponseTime(application.adminResponse.reviewedAt)}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
           <div className="flex items-center gap-1">
             <Calendar className="h-4 w-4" />
             <span>Submitted: {application.submittedDate}</span>
           </div>
-          {application.documents.length > 0 && (
+          {application.documents?.length > 0 && (
             <div className="flex items-center gap-1">
               <FileText className="h-4 w-4" />
               <span>{application.documents.length} document(s)</span>
@@ -348,7 +364,7 @@ const ApplicationCard = ({ application, onViewDetail }) => {
         </div>
 
         <div className="mt-4 pt-4 border-t flex justify-between items-center">
-          <UrgencyBadge level={application.urgency} />
+          <UrgencyBadge level={getPriorityLevel()} />
           <div className="flex gap-2">
             <Button 
               variant="outline" 
@@ -358,7 +374,7 @@ const ApplicationCard = ({ application, onViewDetail }) => {
             >
               <Eye className="h-4 w-4" />
             </Button>
-            {application.status === 'Pending' && (
+            {application.status === 'pending' && (
               <Button 
                 variant="outline" 
                 size="sm"
@@ -375,24 +391,49 @@ const ApplicationCard = ({ application, onViewDetail }) => {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem className="flex items-center cursor-pointer">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Documents
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex items-center cursor-pointer">
+                <DropdownMenuItem 
+                  className="flex items-center cursor-pointer"
+                  onClick={() => onViewDetail(application)}
+                >
                   <Eye className="h-4 w-4 mr-2" />
                   View Details
                 </DropdownMenuItem>
-                {application.status === 'Pending' && (
+                {application.status === 'pending' && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="flex items-center cursor-pointer">
+                    <DropdownMenuItem 
+                      className="flex items-center cursor-pointer"
+                      onClick={() => setShowApplicationForm(true)}
+                    >
                       <Edit className="h-4 w-4 mr-2" />
                       Edit Application
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="flex items-center text-red-600 cursor-pointer">
+                    <DropdownMenuItem 
+                      className="flex items-center text-red-600 cursor-pointer"
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this application?')) {
+                          handleDeleteApplication(application);
+                        }
+                      }}
+                    >
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Cancel Application
+                      Delete Application
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {application.status === 'rejected' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      className="flex items-center text-red-600 cursor-pointer"
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this rejected application? This action cannot be undone.')) {
+                          handleDeleteApplication(application);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Rejected Application
                     </DropdownMenuItem>
                   </>
                 )}
@@ -462,46 +503,409 @@ const ApplicationSkeleton = () => {
   );
 };
 
+// Add this constant outside the component
+const CATEGORIES = ['academic', 'administrative', 'financial'];
+
+// Update the StatsCard component to make it interactive
+const StatsCard = ({ icon: Icon, label, value, bgColor, iconColor, onClick }) => {
+  return (
+    <div 
+      onClick={onClick}
+      className={`${bgColor} p-6 rounded-lg shadow-sm border border-gray-200 
+        transition-all duration-200 cursor-pointer
+        hover:shadow-md hover:scale-[1.02] hover:border-blue-300
+        active:scale-[0.98]`}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">{label}</h3>
+          <p className="text-3xl font-bold mt-2">{value}</p>
+        </div>
+        <div className={`${iconColor} p-3 rounded-full transition-colors duration-200`}>
+          <Icon className="w-6 h-6" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Add this function to calculate stats
+const calculateStats = (applications) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return {
+    total: applications.length,
+    pending: applications.filter(app => app.status === 'pending').length,
+    approved: applications.filter(app => app.status === 'approved').length,
+    rejected: applications.filter(app => app.status === 'rejected').length,
+    highPriority: applications.filter(app => app.priority === 'urgent' || app.priority === 'high').length,
+    today: applications.filter(app => {
+      const appDate = new Date(app.createdAt);
+      appDate.setHours(0, 0, 0, 0);
+      return appDate.getTime() === today.getTime();
+    }).length
+  };
+};
+
 // Main Applications Component
 const Applications = () => {
+  const { user } = useAuthContext();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [sortCriteria, setSortCriteria] = useState('date'); // 'date' or 'priority'
+  const [sortCriteria, setSortCriteria] = useState('date');
   const [selectedApplication, setSelectedApplication] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [showApplicationForm, setShowApplicationForm] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    highPriority: 0,
+    today: 0
+  });
+  const applicationsMapRef = useRef(new Map());
 
+  // Function to update application statistics
+  const updateStats = useCallback((apps) => {
+    if (!apps) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const newStats = apps.reduce((acc, app) => {
+      // Increment total count
+      acc.total++;
+
+      // Count by status
+      if (app.status === 'pending') acc.pending++;
+      else if (app.status === 'approved') acc.approved++;
+      else if (app.status === 'rejected') acc.rejected++;
+
+      // Count urgent applications
+      if (app.priority === 'urgent') acc.urgent++;
+
+      // Count applications submitted today
+      const appDate = new Date(app.createdAt);
+      appDate.setHours(0, 0, 0, 0);
+      if (appDate.getTime() === today.getTime()) {
+        acc.today++;
+      }
+
+      return acc;
+    }, {
+      total: 0,
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      urgent: 0,
+      today: 0
+    });
+
+    setStats(newStats);
+  }, []);
+
+  // Modify the useEffect hook that handles real-time updates
   useEffect(() => {
+    if (!user) {
+      setApplications([]);
+      setStats({
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        highPriority: 0,
+        today: 0
+      });
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    // Simulate fetching data
-    const fetchData = async () => {
-      try {
-        // In a real application, fetch from an API
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
-        setApplications(mockApplications.pending.concat(mockApplications.approved, mockApplications.rejected));
-        setLoading(false);
-      } catch (err) {
-        setError(err);
-        setLoading(false);
+    const unsubscribes = [];
+
+    try {
+      // Use the ref instead of a local variable
+      applicationsMapRef.current.clear();
+
+      // Subscribe to each category
+      CATEGORIES.forEach(category => {
+        const applicationsRef = ref(database, `applications/${category}`);
+        
+        const unsubscribe = onValue(applicationsRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const categoryApplications = Object.entries(snapshot.val())
+              .filter(([_, app]) => app.userId === user.uid)
+              .map(([id, app]) => ({
+                id,
+                ...app,
+                category,
+                lastChecked: new Date().toISOString()
+              }));
+
+            // Update the map using the ref
+            applicationsMapRef.current.set(category, categoryApplications);
+
+            // Combine all applications from the map
+            const allApplications = Array.from(applicationsMapRef.current.values())
+              .flat()
+              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            setApplications(allApplications);
+            // Update stats whenever applications change
+            setStats(calculateStats(allApplications));
+          } else {
+            // If no applications exist for this category, remove them from the map
+            applicationsMapRef.current.delete(category);
+            
+            // Update applications list with remaining applications
+            const remainingApplications = Array.from(applicationsMapRef.current.values())
+              .flat()
+              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            setApplications(remainingApplications);
+            // Update stats whenever applications change
+            setStats(calculateStats(remainingApplications));
+          }
+          setLoading(false);
+        }, (error) => {
+          console.error(`Error fetching ${category} applications:`, error);
+          if (error.message.includes('PERMISSION_DENIED')) {
+            toast.error(`Permission denied for ${category} applications`);
+          }
+          setLoading(false);
+        });
+
+        unsubscribes.push(unsubscribe);
+      });
+
+      // Subscribe to user notifications
+      const userNotificationsRef = ref(database, `notifications/users/${user.uid}`);
+      const notificationsUnsubscribe = onValue(userNotificationsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const notificationsData = Object.entries(snapshot.val())
+            .map(([id, notification]) => ({
+              id,
+              ...notification,
+            }))
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+          setNotifications(notificationsData);
+          setUnreadCount(notificationsData.filter(n => n.status === 'unread').length);
+
+          // Show toast for new notifications
+          const lastChecked = localStorage.getItem('lastNotificationCheck');
+          const newNotifications = notificationsData.filter(
+            n => !lastChecked || new Date(n.createdAt) > new Date(lastChecked)
+          );
+
+          newNotifications.forEach(notification => {
+            if (notification.type.startsWith('application_')) {
+              const icon = notification.type.includes('approved') ? '✅' : 
+                          notification.type.includes('rejected') ? '❌' : 
+                          notification.type.includes('deleted') ? '🗑️' : 'ℹ️';
+              
+              toast(notification.message, { icon });
+            }
+          });
+
+          localStorage.setItem('lastNotificationCheck', new Date().toISOString());
+        } else {
+          setNotifications([]);
+          setUnreadCount(0);
+        }
+      }, (error) => {
+        console.error('Error fetching notifications:', error);
+        if (error.message.includes('PERMISSION_DENIED')) {
+          toast.error('Permission denied for notifications');
+        }
+      });
+
+      unsubscribes.push(notificationsUnsubscribe);
+
+    } catch (error) {
+      console.error('Error setting up Firebase listeners:', error);
+      setError('Failed to connect to the database');
+      toast.error('Failed to connect to the database');
+      setLoading(false);
+    }
+
+    // Cleanup function
+    return () => {
+      unsubscribes.forEach(unsubscribe => unsubscribe());
+      applicationsMapRef.current.clear(); // Clear the map using the ref
+    };
+  }, [user]);
+
+  // Function to mark notification as read
+  const markAsRead = async (notificationId) => {
+    if (!user) return;
+    
+    try {
+      const notificationRef = ref(database, `notifications/users/${user.uid}/${notificationId}`);
+      await update(notificationRef, {
+        status: 'read'
+      });
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // Function to mark all notifications as read
+  const markAllAsRead = async () => {
+    if (!user || notifications.length === 0) return;
+    
+    try {
+      const updates = {};
+      notifications.forEach(notification => {
+        if (notification.status === 'unread') {
+          updates[`notifications/users/${user.uid}/${notification.id}/status`] = 'read';
+        }
+      });
+      
+      await update(ref(database), updates);
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+
+  // Notification Bell Component
+  const NotificationBell = () => (
+    <div className="relative">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowNotifications(!showNotifications);
+        }}
+        className="relative p-2 text-gray-600 hover:text-indigo-600 focus:outline-none"
+      >
+        <Bell className="h-6 w-6" />
+        {unreadCount > 0 && (
+          <span className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+            {unreadCount}
+          </span>
+        )}
+      </button>
+
+      {showNotifications && (
+        <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+              {unreadCount > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    markAllAsRead();
+                  }}
+                  className="text-sm text-indigo-600 hover:text-indigo-800"
+                >
+                  Mark all as read
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="max-h-96 overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">
+                No notifications
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
+                    notification.status === 'unread' ? 'bg-blue-50' : ''
+                  }`}
+                  onClick={() => markAsRead(notification.id)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-full ${
+                      notification.type.includes('approved') ? 'bg-green-100' :
+                      notification.type.includes('rejected') ? 'bg-red-100' :
+                      'bg-blue-100'
+                    }`}>
+                      {notification.type.includes('approved') ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : notification.type.includes('rejected') ? (
+                        <XCircle className="h-4 w-4 text-red-600" />
+                      ) : (
+                        <Bell className="h-4 w-4 text-blue-600" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        {notification.title}
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {notification.message}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(notification.createdAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                    {notification.status === 'unread' && (
+                      <div className="h-2 w-2 bg-blue-600 rounded-full"></div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Add click handler to close notifications when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showNotifications) {
+        setShowNotifications(false);
       }
     };
 
-    fetchData();
-  }, []);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showNotifications]);
 
-  const handleSearchChange = (event) => {
-    setSearchTerm(event.target.value);
-  };
+  // Filtering logic
+  const filteredApplications = applications.filter(app => {
+    const matchesSearch = searchTerm === '' ||
+      app.subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.description?.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const handleStatusFilterChange = (status) => {
-    setFilterStatus(status);
-  };
+    const matchesStatus = filterStatus === 'all' ||
+      app.status.toLowerCase() === filterStatus.toLowerCase();
 
-  const handleSortChange = (criteria) => {
-    setSortCriteria(criteria);
-  };
+    return matchesSearch && matchesStatus;
+  });
+
+  // Sorting logic
+  const sortedApplications = [...filteredApplications].sort((a, b) => {
+    if (sortCriteria === 'date') {
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    } else if (sortCriteria === 'priority') {
+      const urgencyOrder = { 'urgent': 5, 'high': 4, 'medium': 3, 'low': 2, 'normal': 1 };
+      const getPriority = (app) => app.priority || app.urgency || 'normal';
+      return (urgencyOrder[getPriority(b).toLowerCase()] || 0) - (urgencyOrder[getPriority(a).toLowerCase()] || 0);
+    }
+    return 0;
+  });
 
   const handleViewApplication = (application) => {
     setSelectedApplication(application);
@@ -513,39 +917,105 @@ const Applications = () => {
     setSelectedApplication(null);
   };
 
-  // Filtering logic
-  const filteredApplications = applications.filter(app => {
-    const matchesSearch = searchTerm === '' ||
-      app.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.description.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStatus = filterStatus === 'all' ||
-      app.status.toLowerCase() === filterStatus.toLowerCase();
-
-    return matchesSearch && matchesStatus;
-  });
-
-  // Sorting logic
-  const sortedApplications = [...filteredApplications].sort((a, b) => {
-    if (sortCriteria === 'date') {
-      return new Date(b.submittedDate) - new Date(a.submittedDate);
-    } else if (sortCriteria === 'priority') {
-      // Assuming urgency maps to priority levels (High > Medium > Low)
-      const urgencyOrder = { 'Urgent': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
-      return (urgencyOrder[b.urgency] || 0) - (urgencyOrder[a.urgency] || 0);
+  // Add function to handle application deletion
+  const handleDeleteApplication = async (application) => {
+    if (!user || !application) return;
+    
+    // Only allow deletion of pending or rejected applications
+    if (application.status !== 'pending' && application.status !== 'rejected') {
+      toast.error('You can only delete pending or rejected applications');
+      return;
     }
-    return 0; // Default no sort
-  });
+
+    try {
+      // Delete the application first
+      try {
+        await remove(ref(database, `applications/${application.category}/${application.id}`));
+      } catch (error) {
+        console.error('Error deleting application:', error);
+        toast.error('Failed to delete application');
+        return;
+      }
+
+      // Delete user notifications
+      try {
+        const userNotificationsRef = ref(database, `notifications/users/${user.uid}`);
+        const userNotificationsSnapshot = await get(userNotificationsRef);
+        
+        if (userNotificationsSnapshot.exists()) {
+          const notifications = userNotificationsSnapshot.val();
+          const deletePromises = Object.entries(notifications)
+            .filter(([_, notification]) => notification.applicationId === application.id)
+            .map(([key, _]) => 
+              remove(ref(database, `notifications/users/${user.uid}/${key}`))
+            );
+          
+          await Promise.all(deletePromises);
+        }
+      } catch (error) {
+        console.error('Error deleting user notifications:', error);
+        // Continue with the process even if notification deletion fails
+      }
+
+      // Create deletion notification
+      try {
+        const timestamp = new Date().toISOString();
+        const notificationData = {
+          type: 'application_deleted',
+          applicationId: application.id,
+          title: 'Application Deleted',
+          message: `Your ${application.status} ${application.type} application has been deleted.`,
+          status: 'unread',
+          createdAt: timestamp,
+          actionBy: {
+            uid: user.uid,
+            name: user.displayName || user.email,
+            role: 'user'
+          }
+        };
+
+        await push(ref(database, `notifications/users/${user.uid}`), notificationData);
+      } catch (error) {
+        console.error('Error creating deletion notification:', error);
+        // Continue with the process even if notification creation fails
+      }
+
+      toast.success('Application deleted successfully');
+      
+      // Update local state
+      setApplications(prevApplications => 
+        prevApplications.filter(app => app.id !== application.id)
+      );
+
+      // Close any open modals
+      setSelectedApplication(null);
+      setIsDetailModalOpen(false);
+
+    } catch (error) {
+      console.error('Error deleting application:', error);
+      toast.error('Failed to delete application');
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="p-6 text-center">
+        <div className="text-red-500 mb-4">Error: {error}</div>
+        <Button onClick={() => window.location.reload()}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
-      {error && <div className="text-red-500">Error loading applications: {error.message}</div>}
       {loading ? (
         <div className="space-y-4">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-40 w-full" />
+          {[1, 2, 3].map((n) => (
+            <ApplicationSkeleton key={n} />
+          ))}
         </div>
       ) : (
         <>
@@ -557,12 +1027,11 @@ const Applications = () => {
                 placeholder="Search applications by subject, type, or content..."
                 className="pl-9 pr-3"
                 value={searchTerm}
-                onChange={handleSearchChange}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <div className="flex items-center space-x-4">
-              {/* Status Filter Tabs */}
-              <Tabs value={filterStatus} onValueChange={handleStatusFilterChange} className="w-full sm:w-auto">
+              <Tabs value={filterStatus} onValueChange={setFilterStatus} className="w-full sm:w-auto">
                 <TabsList className="grid grid-cols-4 h-auto">
                   <TabsTrigger value="all">All</TabsTrigger>
                   <TabsTrigger value="pending">Pending</TabsTrigger>
@@ -571,7 +1040,8 @@ const Applications = () => {
                 </TabsList>
               </Tabs>
 
-              {/* Sort Dropdown */}
+              <NotificationBell />
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="flex items-center gap-2">
@@ -583,8 +1053,8 @@ const Applications = () => {
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>Sort by</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleSortChange('date')}>Date</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleSortChange('priority')}>Priority</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortCriteria('date')}>Date</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortCriteria('priority')}>Priority</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -624,6 +1094,11 @@ const Applications = () => {
             isOpen={isDetailModalOpen}
             onClose={handleCloseDetailModal}
           />
+
+          {/* New Application Form Modal */}
+          {showApplicationForm && (
+            <ApplicationForm onClose={() => setShowApplicationForm(false)} />
+          )}
         </>
       )}
     </div>

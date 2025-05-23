@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Send, Bell, Calendar, BookOpen, Users, Award, BarChart2, AlertTriangle, Bookmark, Check, X, Plus } from 'lucide-react';
+import { Send, Bell, Calendar, BookOpen, Users, Award, BarChart2, AlertTriangle, Bookmark, Check, X, Plus, Eye } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { database } from '../config/firebase';
+import { ref, push, set, onValue, serverTimestamp } from 'firebase/database';
+import { toast } from 'react-hot-toast';
 
 export default function Announcement() {
   // Form state
@@ -13,35 +16,28 @@ export default function Announcement() {
   const [showPreview, setShowPreview] = useState(false);
   
   // List of announcements
-  const [announcements, setAnnouncements] = useState([
-    { 
-      id: 1, 
-      title: 'Final Exam Schedule', 
-      content: 'Final examination schedule has been published. Please check your email for details.', 
-      category: 'academic', 
-      urgency: 'high', 
-      date: '2025-05-15', 
-      views: 124 
-    },
-    { 
-      id: 2, 
-      title: 'Faculty Meeting', 
-      content: 'Monthly faculty meeting will be held next Monday at 3PM in the conference room.', 
-      category: 'meeting', 
-      urgency: 'normal', 
-      date: '2025-05-20', 
-      views: 87 
-    },
-    { 
-      id: 3, 
-      title: 'Research Grant Opportunity', 
-      content: 'New research grants are available for the Fall semester. Application deadline is June 30.', 
-      category: 'research', 
-      urgency: 'normal', 
-      date: '2025-05-12', 
-      views: 65 
-    },
-  ]);
+  const [announcements, setAnnouncements] = useState([]);
+
+  // Fetch announcements from Firebase
+  useEffect(() => {
+    const announcementsRef = ref(database, 'announcements');
+    const unsubscribe = onValue(announcementsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const announcementsData = [];
+        snapshot.forEach((childSnapshot) => {
+          announcementsData.push({
+            id: childSnapshot.key,
+            ...childSnapshot.val()
+          });
+        });
+        // Sort by date in descending order
+        announcementsData.sort((a, b) => new Date(b.date) - new Date(a.date));
+        setAnnouncements(announcementsData);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Current date for the dashboard
   const today = new Date().toLocaleDateString('en-US', {
@@ -81,31 +77,42 @@ export default function Announcement() {
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A28CFF'];
   
   // Submit handler
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!title || !content || !category) {
-      alert('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
     
-    const newAnnouncement = {
-      id: announcements.length + 1,
-      title,
-      content,
-      category,
-      urgency,
-      date,
-      views: 0
-    };
-    
-    setAnnouncements([newAnnouncement, ...announcements]);
-    
-    // Reset form
-    setTitle('');
-    setContent('');
-    setCategory('general');
-    setUrgency('normal');
-    setAttachmentName('');
-    setShowPreview(false);
+    try {
+      const announcementsRef = ref(database, 'announcements');
+      const newAnnouncementRef = push(announcementsRef);
+      
+      const newAnnouncement = {
+        title,
+        content,
+        category,
+        urgency,
+        date,
+        views: 0,
+        createdAt: serverTimestamp(),
+        attachmentName: attachmentName || null
+      };
+      
+      await set(newAnnouncementRef, newAnnouncement);
+      
+      toast.success('Announcement created successfully!');
+      
+      // Reset form
+      setTitle('');
+      setContent('');
+      setCategory('general');
+      setUrgency('normal');
+      setAttachmentName('');
+      setShowPreview(false);
+    } catch (error) {
+      console.error('Error creating announcement:', error);
+      toast.error('Failed to create announcement. Please try again.');
+    }
   };
   
   // Handle file selection
@@ -142,6 +149,60 @@ export default function Announcement() {
         return 'bg-gray-100 text-gray-800 border-gray-200';
       default:
         return 'bg-blue-100 text-blue-800 border-blue-200';
+    }
+  };
+
+  const AnnouncementCard = ({ announcement }) => {
+    const readCount = announcement.readCount || 0;
+    const totalViews = announcement.views || 0;
+
+    return (
+      <div className="bg-white rounded-lg shadow-md p-4 mb-4 border-l-4 border-indigo-500">
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-gray-800">{announcement.title}</h3>
+            <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
+              <span>{new Date(announcement.date).toLocaleDateString()}</span>
+              <span>•</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs ${getUrgencyStyle(announcement.urgency)}`}>
+                {announcement.urgency.charAt(0).toUpperCase() + announcement.urgency.slice(1)}
+              </span>
+              <span>•</span>
+              <div className="flex items-center gap-1">
+                <Eye className="h-4 w-4 text-gray-400" />
+                <span>{readCount} reads</span>
+              </div>
+            </div>
+            <p className="mt-2 text-gray-600">{announcement.content}</p>
+            {announcement.attachmentName && (
+              <div className="mt-2 flex items-center text-sm text-indigo-600">
+                <Bookmark className="h-4 w-4 mr-1" />
+                {announcement.attachmentName}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col items-end">
+            <div className={`p-2 rounded-full ${getCategoryStyle(announcement.category)}`}>
+              {getCategoryIcon(announcement.category)}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const getCategoryStyle = (category) => {
+    switch (category) {
+      case 'academic':
+        return 'bg-blue-100';
+      case 'event':
+        return 'bg-green-100';
+      case 'meeting':
+        return 'bg-purple-100';
+      case 'research':
+        return 'bg-amber-100';
+      default:
+        return 'bg-gray-100';
     }
   };
 
@@ -315,33 +376,23 @@ export default function Announcement() {
             )}
             
             {/* Recent Announcements */}
-            <div className="mt-6 bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">Recent Announcements</h2>
-              
-              <div className="space-y-4">
-                {announcements.map(announcement => (
-                  <div key={announcement.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors duration-150">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center">
-                        {getCategoryIcon(announcement.category)}
-                        <h3 className="text-lg font-medium ml-2">{announcement.title}</h3>
-                      </div>
-                      <span className={`text-xs px-2 py-1 rounded-full ${getUrgencyStyle(announcement.urgency)}`}>
-                        {announcement.urgency.charAt(0).toUpperCase() + announcement.urgency.slice(1)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-gray-600">{announcement.content}</p>
-                    <div className="mt-3 flex justify-between items-center text-sm text-gray-500">
-                      <div>
-                        Published: {new Date(announcement.date).toLocaleDateString()}
-                      </div>
-                      <div className="flex items-center">
-                        <Users size={14} className="mr-1" />
-                        <span>{announcement.views} views</span>
-                      </div>
-                    </div>
+            <div className="mt-6">
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-semibold mb-4 flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Bell className="mr-2 text-indigo-600" size={20} />
+                    Recent Announcements
                   </div>
-                ))}
+                  <div className="text-sm font-normal text-gray-500 flex items-center">
+                    <Eye className="h-4 w-4 mr-1" />
+                    Total Views: {announcements.reduce((sum, ann) => sum + (ann.readCount || 0), 0)}
+                  </div>
+                </h2>
+                <div className="space-y-4">
+                  {announcements.map((announcement) => (
+                    <AnnouncementCard key={announcement.id} announcement={announcement} />
+                  ))}
+                </div>
               </div>
             </div>
           </div>

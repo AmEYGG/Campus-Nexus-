@@ -15,8 +15,12 @@ import Applications from './Applications';
 import ApplicationNotifications from './ApplicationNotifications';
 import { calculatePriority, sortByPriority } from './ApplicationPriority';
 import ApplicationForm from './ApplicationForm';
+import { database } from '@/config/firebase';
+import { ref, onValue } from 'firebase/database';
+import { useAuthContext } from '@/providers/AuthProvider';
 
 const ApplicationDashboard = () => {
+  const { user } = useAuthContext();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [applications, setApplications] = useState([]);
   const [stats, setStats] = useState({
@@ -24,48 +28,86 @@ const ApplicationDashboard = () => {
     pending: 0,
     approved: 0,
     rejected: 0,
-    highPriority: 0
+    highPriority: 0,
+    today: 0
   });
 
-  // Simulated data fetch - replace with actual API call
+  // Real-time data fetch from Firebase
   useEffect(() => {
-    // Fetch applications data
-    const fetchApplications = async () => {
-      // Simulated API response
-      const mockData = [
-        {
-          id: 1,
-          type: 'event',
-          title: 'Tech Fest 2024',
-          description: 'Annual technology festival',
-          requestedAmount: 5000,
-          eventDate: '2024-05-15',
-          status: 'pending',
-          priority: 'normal',
-          submittedDate: '2024-03-01',
-          submittedBy: 'John Doe',
-          comments: []
-        },
-        // Add more mock data as needed
-      ];
+    if (!user) {
+      setApplications([]);
+      setStats({
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        highPriority: 0,
+        today: 0
+      });
+      return;
+    }
 
-      setApplications(mockData);
+    const categories = ['academic', 'administrative', 'financial'];
+    const applicationsMap = new Map();
+    const unsubscribes = [];
+
+    categories.forEach(category => {
+      const applicationsRef = ref(database, `applications/${category}`);
+      
+      const unsubscribe = onValue(applicationsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const categoryApplications = Object.entries(snapshot.val())
+            .filter(([_, app]) => app.userId === user.uid)
+            .map(([id, app]) => ({
+              id,
+              ...app,
+              category,
+              lastChecked: new Date().toISOString()
+            }));
+
+          applicationsMap.set(category, categoryApplications);
+
+          // Combine all applications
+          const allApplications = Array.from(applicationsMap.values())
+            .flat()
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+          setApplications(allApplications);
+          
+          // Calculate stats
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          const newStats = {
+            total: allApplications.length,
+            pending: allApplications.filter(app => app.status === 'pending').length,
+            approved: allApplications.filter(app => app.status === 'approved').length,
+            rejected: allApplications.filter(app => app.status === 'rejected').length,
+            highPriority: allApplications.filter(app => 
+              app.priority === 'urgent' || app.priority === 'high' ||
+              calculatePriority(app) === 'high' || calculatePriority(app) === 'urgent'
+            ).length,
+            today: allApplications.filter(app => {
+              const appDate = new Date(app.createdAt);
+              appDate.setHours(0, 0, 0, 0);
+              return appDate.getTime() === today.getTime();
+            }).length
+          };
+          
+          setStats(newStats);
+        }
+      }, (error) => {
+        console.error(`Error fetching ${category} applications:`, error);
+      });
+
+      unsubscribes.push(unsubscribe);
+    });
+
+    // Cleanup function
+    return () => {
+      unsubscribes.forEach(unsubscribe => unsubscribe());
     };
-
-    fetchApplications();
-  }, []);
-
-  // Calculate statistics
-  useEffect(() => {
-    const newStats = {
-      total: applications.length,
-      pending: applications.filter(app => app.status === 'pending').length,
-      approved: applications.filter(app => app.status === 'approved').length,
-      rejected: applications.filter(app => app.status === 'rejected').length,
-      highPriority: applications.filter(app => calculatePriority(app) === 'high' || calculatePriority(app) === 'urgent').length
-    };
-    setStats(newStats);
-  }, [applications]);
+  }, [user]);
 
   const StatCard = ({ title, value, icon: Icon, color }) => (
     <motion.div
@@ -86,8 +128,6 @@ const ApplicationDashboard = () => {
 
   const handleFormClose = () => {
     setIsFormOpen(false);
-    // Optional: Refetch applications after form is closed
-    // fetchApplications(); 
   };
 
   return (
@@ -158,22 +198,7 @@ const ApplicationDashboard = () => {
 
       {/* Application Form Modal */}
       {isFormOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1rem',
-          }}
-        >
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto relative">
             <ApplicationForm onClose={handleFormClose} />
           </div>

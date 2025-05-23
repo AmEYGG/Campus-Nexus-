@@ -33,7 +33,7 @@ const FacultyMenu = () => {
     { id: 'fund', icon: <DollarSign size={20} />, label: 'Fund Management', link: '/faculty/fund-management' },
     { id: 'facilities', icon: <Calendar size={20} />, label: 'Facilities Management', link: '/faculty/facilities-management' },
     { id: 'applications', icon: <ClipboardList size={20} />, label: 'Application Management', link: '/faculty/ApplicationManagement' },
-    { id: 'complaintReview', icon: <MessageSquare size={20} />, label: 'Complaint Review', link: '/faculty/complaintReview' },
+    { id: 'complaints', icon: <MessageSquare size={20} />, label: 'Complaint Review', link: '/faculty/complaints/review' },
     { id: 'announcements', icon: <Megaphone size={20} />, label: 'Announcements', link: '/faculty/announcements' }
   ];
 

@@ -1,933 +1,1134 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   FileText, CheckCircle2, XCircle, Clock, 
   AlertCircle, Calendar, DollarSign, Stethoscope,
   Building, MessageSquare, Eye, Filter, Search,
   Download, Paperclip, ArrowRight, TrendingUp,
-  Users, BarChart2, PieChart, Activity
+  Users, BarChart2, PieChart, Activity,
+  Check, X, Bell, UserCircle, ChevronRight,
+  CheckCircle, Star, Sparkles, Shield, Trash2
 } from 'lucide-react';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart as RechartsPieChart, Pie, Cell, LineChart, Line,
-  AreaChart, Area
-} from 'recharts';
-
-// Mock data for applications
-const mockApplications = {
-  medicalLeave: [
-    {
-      id: 'ML001',
-      studentName: 'John Doe',
-      studentId: 'STU2024001',
-      reason: 'Medical treatment for flu',
-      startDate: '2024-03-15',
-      endDate: '2024-03-20',
-      status: 'pending',
-      documents: ['medical_certificate.pdf'],
-      submittedAt: '2024-03-14T10:30:00',
-      details: 'Requires 5 days of leave for medical treatment and recovery',
-      urgency: 'high'
-    },
-    {
-      id: 'ML002',
-      studentName: 'Emma Wilson',
-      studentId: 'STU2024005',
-      reason: 'Surgery recovery',
-      startDate: '2024-03-25',
-      endDate: '2024-04-10',
-      status: 'pending',
-      documents: ['hospital_discharge.pdf', 'doctor_recommendation.pdf'],
-      submittedAt: '2024-03-18T09:15:00',
-      details: 'Post-surgery recovery requiring extended absence',
-      urgency: 'medium'
-    },
-  ],
-  sponsorship: [
-    {
-      id: 'SP001',
-      studentName: 'Jane Smith',
-      studentId: 'STU2024002',
-      eventName: 'International Conference on AI',
-      amount: 2500,
-      purpose: 'Conference participation and presentation',
-      status: 'pending',
-      documents: ['conference_details.pdf', 'budget_breakdown.pdf'],
-      submittedAt: '2024-03-13T14:20:00',
-      details: 'Requesting sponsorship for attending and presenting research paper',
-      urgency: 'medium'
-    },
-    {
-      id: 'SP002',
-      studentName: 'Michael Chang',
-      studentId: 'STU2024006',
-      eventName: 'Global Business Summit',
-      amount: 1800,
-      purpose: 'Representing university at business competition',
-      status: 'pending',
-      documents: ['invitation_letter.pdf', 'expense_estimate.pdf'],
-      submittedAt: '2024-03-17T11:40:00',
-      details: 'Seeking funds for travel and accommodation',
-      urgency: 'high'
-    },
-  ],
-  eventPermission: [
-    {
-      id: 'EP001',
-      organizerName: 'Computer Science Club',
-      eventName: 'Tech Symposium 2024',
-      date: '2024-04-15',
-      venue: 'Main Auditorium',
-      expectedAttendees: 200,
-      status: 'pending',
-      documents: ['event_proposal.pdf', 'venue_requirements.pdf'],
-      submittedAt: '2024-03-12T09:15:00',
-      details: 'Annual technical symposium with workshops and guest lectures',
-      urgency: 'medium'
-    },
-    {
-      id: 'EP002',
-      organizerName: 'Student Council',
-      eventName: 'Annual Cultural Festival',
-      date: '2024-05-10',
-      venue: 'Campus Grounds',
-      expectedAttendees: 500,
-      status: 'pending',
-      documents: ['event_plan.pdf', 'safety_measures.pdf', 'budget_proposal.pdf'],
-      submittedAt: '2024-03-16T13:20:00',
-      details: 'Three-day cultural event featuring performances, food stalls, and competitions',
-      urgency: 'low'
-    },
-  ]
-};
+import { database } from '@/config/firebase';
+import { ref, onValue, update, push, set, get, remove, query, orderByChild, equalTo } from 'firebase/database';
+import { useAuthContext } from '@/providers/AuthProvider';
+import { toast } from 'react-hot-toast';
+import { DialogContent, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const ApplicationManagement = () => {
-  const [applications, setApplications] = useState(mockApplications);
-  const [selectedApplication, setSelectedApplication] = useState(null);
-  const [reviewComment, setReviewComment] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentTab, setCurrentTab] = useState('medicalLeave');
-  const [reviewMode, setReviewMode] = useState('view'); // 'view', 'review', 'history'
-  
-  // New state for statistics
+  const { user } = useAuthContext();
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedApp, setSelectedApp] = useState(null);
+  const [comment, setComment] = useState('');
+  const [viewDetails, setViewDetails] = useState(null);
+  const [activeTab, setActiveTab] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
     approved: 0,
     rejected: 0,
-    averageProcessingTime: '2.5 days',
-    urgentApplications: 0
+    urgent: 0,
+    today: 0
   });
+  const [userRole, setUserRole] = useState(null);
+  const [isAuthorized, setIsAuthorized] = useState(false);
 
-  // Calculate statistics whenever applications change
-  useEffect(() => {
-    const calculateStats = () => {
-      let total = 0;
-      let pending = 0;
-      let approved = 0;
-      let rejected = 0;
-      let urgent = 0;
+  // Define updateStats with useCallback before using it in useEffect
+  const updateStats = useCallback((apps) => {
+    if (!apps) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-      Object.values(applications).forEach(appType => {
-        appType.forEach(app => {
-          total++;
-          if (app.status === 'pending') pending++;
-          if (app.status === 'approved') approved++;
-          if (app.status === 'rejected') rejected++;
-          if (app.urgency === 'high') urgent++;
-        });
-      });
-
-      setStats({
-        total,
-        pending,
-        approved,
-        rejected,
-        averageProcessingTime: '2.5 days',
-        urgentApplications: urgent
-      });
+    const newStats = {
+      total: apps.length,
+      pending: apps.filter(app => app.status === 'pending').length,
+      approved: apps.filter(app => app.status === 'approved').length,
+      rejected: apps.filter(app => app.status === 'rejected').length,
+      urgent: apps.filter(app => app.priority === 'urgent').length,
+      today: apps.filter(app => {
+        const appDate = new Date(app.createdAt);
+        appDate.setHours(0, 0, 0, 0);
+        return appDate.getTime() === today.getTime();
+      }).length
     };
 
-    calculateStats();
-  }, [applications]);
+    setStats(newStats);
+  }, []);
 
-  // Data for charts
-  const getChartData = () => {
-    const statusData = [
-      { name: 'Pending', value: stats.pending, color: '#F59E0B' },
-      { name: 'Approved', value: stats.approved, color: '#10B981' },
-      { name: 'Rejected', value: stats.rejected, color: '#EF4444' }
-    ];
+  // Check if user is admin/faculty
+  useEffect(() => {
+    const checkAuthorizationStatus = async () => {
+      if (!user) {
+        setIsAdmin(false);
+        setIsAuthorized(false);
+        setUserRole(null);
+        localStorage.removeItem('authToken');
+        return;
+      }
 
-    const typeData = [
-      { name: 'Medical Leave', value: applications.medicalLeave.length, color: '#3B82F6' },
-      { name: 'Sponsorship', value: applications.sponsorship.length, color: '#10B981' },
-      { name: 'Event Permission', value: applications.eventPermission.length, color: '#8B5CF6' }
-    ];
+      try {
+        // Check both admin and faculty roles
+        const adminRef = ref(database, `admins/${user.uid}`);
+        const facultyRef = ref(database, `faculty/${user.uid}`);
+        
+        const [adminSnapshot, facultySnapshot] = await Promise.all([
+          get(adminRef),
+          get(facultyRef)
+        ]);
 
-    const trendData = [
-      { month: 'Jan', applications: 12, approvals: 8 },
-      { month: 'Feb', applications: 15, approvals: 12 },
-      { month: 'Mar', applications: 18, approvals: 15 },
-      { month: 'Apr', applications: 14, approvals: 11 },
-      { month: 'May', applications: 16, approvals: 13 }
-    ];
+        let role = null;
+        let authorized = false;
+        let isAdminUser = false;
+        let permissions = {};
 
-    return { statusData, typeData, trendData };
-  };
+        if (adminSnapshot.exists()) {
+          role = 'admin';
+          authorized = true;
+          isAdminUser = true;
+          permissions = {
+            canApprove: true,
+            canReject: true,
+            isAdmin: true,
+            canManageApplications: true
+          };
+        } else if (facultySnapshot.exists()) {
+          role = 'faculty';
+          authorized = true;
+          isAdminUser = false;
+          permissions = {
+            canApprove: true,
+            canReject: true,
+            isFaculty: true,
+            canManageApplications: true,
+            canUpdateApplications: true
+          };
+        }
 
-  const { statusData, typeData, trendData } = getChartData();
+        setUserRole(role);
+        setIsAuthorized(authorized);
+        setIsAdmin(isAdminUser);
 
-  const handleStatusChange = (type, applicationId, newStatus) => {
-    setApplications(prev => ({
-      ...prev,
-      [type]: prev[type].map(app => 
-        app.id === applicationId 
-          ? { ...app, status: newStatus, reviewedAt: new Date().toISOString(), reviewComment }
-          : app
-      )
-    }));
-    setSelectedApplication(null);
-    setReviewComment('');
-    setReviewMode('view');
-  };
+        if (authorized) {
+          // Store authorization token in localStorage with permissions
+          const authToken = {
+            uid: user.uid,
+            role: role,
+            permissions: permissions,
+            timestamp: Date.now(),
+            email: user.email,
+            displayName: user.displayName
+          };
+          localStorage.setItem('authToken', JSON.stringify(authToken));
+        } else {
+          localStorage.removeItem('authToken');
+        }
+      } catch (error) {
+        console.error('Error checking authorization status:', error);
+        setIsAdmin(false);
+        setIsAuthorized(false);
+        setUserRole(null);
+        localStorage.removeItem('authToken');
+      }
+    };
 
-  const filteredApplications = applications[currentTab].filter(app => {
-    const matchesStatus = filterStatus === 'all' || app.status === filterStatus;
-    const matchesSearch = searchTerm === '' || 
-      (currentTab === 'medicalLeave' && app.studentName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (currentTab === 'sponsorship' && (app.studentName.toLowerCase().includes(searchTerm.toLowerCase()) || app.eventName.toLowerCase().includes(searchTerm.toLowerCase()))) ||
-      (currentTab === 'eventPermission' && (app.organizerName.toLowerCase().includes(searchTerm.toLowerCase()) || app.eventName.toLowerCase().includes(searchTerm.toLowerCase())));
-    
-    return matchesStatus && matchesSearch;
-  });
+    checkAuthorizationStatus();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const unsubscribes = [];
+
+    try {
+      // Define categories to fetch
+      const categories = ['academic', 'administrative', 'financial'];
+      let allApplications = [];
+
+      // Subscribe to each category
+      categories.forEach(category => {
+        const applicationsRef = ref(database, `applications/${category}`);
+        const unsubscribe = onValue(applicationsRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const applications = Object.entries(snapshot.val()).map(([id, app]) => ({
+              id,
+              ...app,
+              category // Add category to each application
+            }));
+            
+            // Update the allApplications array
+            allApplications = allApplications.filter(app => app.category !== category);
+            allApplications = [...allApplications, ...applications];
+            
+            // Sort applications by date
+            allApplications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            
+            // Update state and stats
+            setApplications(allApplications);
+            updateStats(allApplications);
+          } else {
+            // If no applications exist for this category, remove them from the list
+            allApplications = allApplications.filter(app => app.category !== category);
+            setApplications(allApplications);
+            updateStats(allApplications);
+          }
+        }, (error) => {
+          console.error(`Error fetching ${category} applications:`, error);
+          if (error.message.includes('PERMISSION_DENIED')) {
+            toast.error(`Permission denied for ${category} applications`);
+          }
+        });
+        
+        unsubscribes.push(unsubscribe);
+      });
+
+      // Subscribe to admin notifications
+      const adminNotificationsRef = ref(database, 'notifications/admin');
+      const notificationsUnsubscribe = onValue(adminNotificationsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const notifications = Object.entries(snapshot.val())
+            .map(([id, notification]) => ({
+              id,
+              ...notification
+            }))
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+          // Show toast for new notifications
+          const lastChecked = localStorage.getItem('lastNotificationCheck');
+          const newNotifications = notifications.filter(
+            n => !lastChecked || new Date(n.createdAt) > new Date(lastChecked)
+          );
+          
+          newNotifications.forEach(notification => {
+            if (notification.type.startsWith('application_')) {
+              toast(notification.message, {
+                icon: notification.type.includes('approved') ? '✅' : 
+                      notification.type.includes('rejected') ? '❌' : 'ℹ️'
+              });
+            }
+          });
+
+          localStorage.setItem('lastNotificationCheck', new Date().toISOString());
+        }
+      });
+      unsubscribes.push(notificationsUnsubscribe);
+
+    } catch (error) {
+      console.error('Error setting up Firebase listeners:', error);
+      setError('Failed to connect to the database');
+      toast.error('Failed to connect to the database');
+    } finally {
+      setLoading(false);
+    }
+
+    return () => {
+      unsubscribes.forEach(unsubscribe => unsubscribe());
+    };
+  }, [user, updateStats]);
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      pending: { variant: 'bg-yellow-100 text-yellow-800', icon: Clock, text: 'Pending' },
-      approved: { variant: 'bg-green-100 text-green-800', icon: CheckCircle2, text: 'Approved' },
-      rejected: { variant: 'bg-red-100 text-red-800', icon: XCircle, text: 'Rejected' }
-    };
-
-    const config = statusConfig[status];
-    const Icon = config.icon;
-
-    return (
-      <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${config.variant}`}>
-        <Icon className="h-3 w-3" />
-        {config.text}
-      </div>
-    );
-  };
-  
-  const getUrgencyBadge = (urgency) => {
-    const urgencyConfig = {
-      high: { variant: 'bg-red-50 text-red-700 border-red-300', text: 'High' },
-      medium: { variant: 'bg-orange-50 text-orange-700 border-orange-300', text: 'Medium' },
-      low: { variant: 'bg-blue-50 text-blue-700 border-blue-300', text: 'Low' }
-    };
-    
-    const config = urgencyConfig[urgency] || urgencyConfig.medium;
-    
-    return (
-      <div className={`text-xs border px-2 py-0.5 rounded ${config.variant}`}>
-        {config.text}
-      </div>
-    );
-  };
-
-  const ApplicationCard = ({ application, type }) => {
-    const getTypeIcon = () => {
-      switch (type) {
-        case 'medicalLeave':
-          return <Stethoscope className="h-5 w-5 text-blue-600" />;
-        case 'sponsorship':
-          return <DollarSign className="h-5 w-5 text-green-600" />;
-        case 'eventPermission':
-          return <Building className="h-5 w-5 text-purple-600" />;
-        default:
-          return <FileText className="h-5 w-5 text-gray-600" />;
+      approved: {
+        bg: 'bg-green-100',
+        text: 'text-green-800',
+        border: 'border-green-200',
+        icon: CheckCircle,
+        label: 'Approved'
+      },
+      rejected: {
+        bg: 'bg-red-100',
+        text: 'text-red-800',
+        border: 'border-red-200',
+        icon: XCircle,
+        label: 'Rejected'
+      },
+      pending: {
+        bg: 'bg-yellow-100',
+        text: 'text-yellow-800',
+        border: 'border-yellow-200',
+        icon: Clock,
+        label: 'Pending Review'
       }
     };
 
-    const formattedDate = (dateString) => {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      });
-    };
+    const config = statusConfig[status] || statusConfig.pending;
+    const IconComponent = config.icon;
 
     return (
-      <div className="bg-white rounded-lg border shadow-sm hover:shadow-md transition-all duration-200">
-        <div className="p-4">
-          <div className="flex justify-between items-start mb-3">
-            <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100">
-                {getTypeIcon()}
-              </div>
-              <div>
-                <h3 className="font-semibold">
-                  {type === 'medicalLeave' ? application.studentName :
-                   type === 'sponsorship' ? application.studentName :
-                   application.organizerName}
-                </h3>
-                <p className="text-sm text-gray-600">
-                  {type === 'medicalLeave' ? `Medical Leave (${application.studentId})` :
-                   type === 'sponsorship' ? `Sponsorship (${application.studentId})` :
-                   'Event Permission'}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              {getStatusBadge(application.status)}
-              {getUrgencyBadge(application.urgency)}
-            </div>
-          </div>
+      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${config.bg} ${config.text} ${config.border}`}>
+        <IconComponent className="w-3.5 h-3.5" />
+        {config.label}
+      </span>
+    );
+  };
 
-          <div className="space-y-2 text-sm">
-            {type === 'medicalLeave' && (
-              <>
-                <p className="font-medium text-gray-900">{application.reason}</p>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Calendar className="h-4 w-4" />
-                  <span>{formattedDate(application.startDate)} - {formattedDate(application.endDate)}</span>
-                </div>
-              </>
-            )}
-            {type === 'sponsorship' && (
-              <>
-                <p className="font-medium text-gray-900">{application.eventName}</p>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <DollarSign className="h-4 w-4" />
-                  <span className="font-semibold">${application.amount.toLocaleString()}</span> - {application.purpose}
-                </div>
-              </>
-            )}
-            {type === 'eventPermission' && (
-              <>
-                <p className="font-medium text-gray-900">{application.eventName}</p>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Calendar className="h-4 w-4" />
-                  <span>{formattedDate(application.date)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Building className="h-4 w-4" />
-                  <span>{application.venue} - {application.expectedAttendees} attendees</span>
-                </div>
-              </>
-            )}
-            <div className="flex items-center gap-1 text-gray-500 text-xs">
-              <Clock className="h-3 w-3" />
-              Submitted {new Date(application.submittedAt).toLocaleDateString()}
-            </div>
-          </div>
+  const getPriorityBadge = (priority) => {
+    const priorityConfig = {
+      urgent: {
+        bg: 'bg-red-100',
+        text: 'text-red-800',
+        border: 'border-red-200',
+        icon: AlertCircle,
+        label: 'Urgent'
+      },
+      high: {
+        bg: 'bg-orange-100',
+        text: 'text-orange-800',
+        border: 'border-orange-200',
+        icon: AlertCircle,
+        label: 'High'
+      },
+      medium: {
+        bg: 'bg-blue-100',
+        text: 'text-blue-800',
+        border: 'border-blue-200',
+        icon: Star,
+        label: 'Medium'
+      },
+      low: {
+        bg: 'bg-green-100',
+        text: 'text-green-800',
+        border: 'border-green-200',
+        icon: Clock,
+        label: 'Low'
+      }
+    };
 
-          <div className="flex gap-1 mt-3">
-            {application.documents.map((doc, index) => (
-              <div key={index} className="text-xs bg-gray-100 px-2 py-1 rounded flex items-center gap-1">
-                <Paperclip className="h-3 w-3" />
-                {doc.split('_')[0]}
-              </div>
-            ))}
-          </div>
+    const config = priorityConfig[priority] || priorityConfig.medium;
+    const IconComponent = config.icon;
 
-          <div className="mt-4 flex gap-2 justify-end">
-            <button
-              className={`px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-1 ${
-                application.status === 'pending' 
-                  ? 'text-white bg-blue-600 hover:bg-blue-700' 
-                  : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-              }`}
-              onClick={() => {
-                setSelectedApplication({ ...application, type });
-                setReviewMode(application.status === 'pending' ? 'review' : 'view');
-              }}
-            >
-              <Eye className="h-4 w-4" />
-              {application.status === 'pending' ? 'Review' : 'View'}
-            </button>
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${config.bg} ${config.text} ${config.border}`}>
+        <IconComponent className="w-3.5 h-3.5" />
+        {config.label} Priority
+      </span>
+    );
+  };
+
+  const handleAction = async (application, action) => {
+    if (!user) {
+      toast.error('You must be logged in to perform this action');
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      const status = action === 'approve' ? 'approved' : 'rejected';
+      const timestamp = new Date().toISOString();
+      
+      // Create the reviewer info object
+      const reviewerInfo = {
+        name: user.displayName || user.email,
+        email: user.email,
+        uid: user.uid,
+        role: userRole
+      };
+      
+      // Create the response object
+      const responseData = {
+        status,
+        reviewedAt: timestamp,
+        reviewedBy: reviewerInfo,
+        comment: comment.trim() || null
+      };
+
+      // Create base application update
+      const baseUpdate = {
+        status,
+        updatedAt: timestamp,
+        adminResponse: responseData
+      };
+
+      try {
+        // 1. Update application status
+        const applicationRef = ref(database, `applications/${application.category}/${application.id}`);
+        await set(applicationRef, {
+          ...application,
+          ...baseUpdate
+        });
+
+        // 2. Create notification for user
+        try {
+          const notificationData = {
+            type: `application_${status}`,
+            applicationId: application.id,
+            title: `Application ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+            message: `Your ${application.type} application has been ${status}${comment ? ': ' + comment : '.'}`,
+            status: 'unread',
+            createdAt: timestamp,
+            actionBy: reviewerInfo
+          };
+
+          // Create notification under the user's notifications
+          const userNotificationRef = ref(database, `notifications/users/${application.userId}`);
+          const newNotificationRef = push(userNotificationRef);
+          await set(newNotificationRef, notificationData);
+
+          // Also create a copy in admin notifications for tracking
+          const adminNotificationRef = ref(database, 'notifications/admin');
+          const newAdminNotificationRef = push(adminNotificationRef);
+          await set(newAdminNotificationRef, {
+            ...notificationData,
+            userId: application.userId,
+            userEmail: application.userEmail,
+            applicationCategory: application.category
+          });
+
+        } catch (notificationError) {
+          console.warn('Failed to create notification:', notificationError);
+          // Continue with the process even if notification fails
+        }
+
+        // 3. Log the action
+        const logPath = isAdmin ? 'adminActionLogs' : 'facultyActionLogs';
+        const actionLogRef = ref(database, `${logPath}/${user.uid}`);
+        await push(actionLogRef, {
+          actionType: `application_${status}`,
+          applicationId: application.id,
+          userId: application.userId,
+          timestamp,
+          actionBy: reviewerInfo,
+          applicationDetails: {
+            id: application.id,
+            type: application.type,
+            category: application.category,
+            status: status
+          }
+        });
+
+        // Update local state
+        setApplications(prevApps =>
+          prevApps.map(app =>
+            app.id === application.id
+              ? {
+                  ...app,
+                  ...baseUpdate
+                }
+              : app
+          )
+        );
+
+        // Update stats
+        setStats(prev => ({
+          ...prev,
+          [status]: prev[status] + 1,
+          pending: prev.pending - 1
+        }));
+
+        setViewDetails(null);
+        setSelectedApp(null);
+        setComment('');
+        
+        toast.success(`Application ${status} successfully!`);
+      } catch (error) {
+        console.error('Operation error:', error);
+        if (error.message.includes('PERMISSION_DENIED')) {
+          toast.error('Permission denied. Please check your access rights.');
+        } else {
+          toast.error('Failed to update application. Please try again.');
+        }
+      }
+    } catch (error) {
+      console.error('Error in action handling:', error);
+      toast.error('An unexpected error occurred. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleQuickAction = async (application, action, event) => {
+    event?.stopPropagation();
+    setComment('');
+    await handleAction(application, action);
+  };
+
+  const filteredApplications = applications.filter(app => {
+    const matchesSearch = !searchQuery || 
+      (app.userName && app.userName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (app.userEmail && app.userEmail.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (app.type && app.type.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (app.description && app.description.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchesStatus = activeTab === 'all' || app.status === activeTab;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getTypeIcon = (type) => {
+    const iconMap = {
+      medicalLeave: Stethoscope,
+      sponsorship: DollarSign,
+      eventPermission: Building
+    };
+    
+    const IconComponent = iconMap[type] || FileText;
+    return <IconComponent className="w-5 h-5" />;
+  };
+
+  // Stats Card Component
+  const StatsCard = ({ title, value, icon, description, color = 'blue' }) => {
+    const colorConfig = {
+      blue: 'border-blue-500 bg-blue-50 text-blue-500',
+      yellow: 'border-yellow-500 bg-yellow-50 text-yellow-500',
+      green: 'border-green-500 bg-green-50 text-green-500',
+      red: 'border-red-500 bg-red-50 text-red-500',
+      purple: 'border-purple-500 bg-purple-50 text-purple-500',
+      indigo: 'border-indigo-500 bg-indigo-50 text-indigo-500'
+    };
+    
+    return (
+      <div className={`bg-white rounded-xl shadow-sm border-l-4 ${colorConfig[color].split(' ')[0]} p-6 hover:shadow-md transition-shadow duration-200`}>
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-gray-600">{title}</p>
+            <p className="text-3xl font-bold text-gray-900">{value}</p>
+            <p className="text-xs text-gray-500">{description}</p>
+          </div>
+          <div className={`p-3 rounded-full ${colorConfig[color].split(' ').slice(1).join(' ')}`}>
+            {React.cloneElement(icon, { className: `w-6 h-6 ${colorConfig[color].split(' ')[2]}` })}
           </div>
         </div>
       </div>
     );
   };
 
-  const ApplicationReviewModal = ({ application, onClose }) => {
-    if (!application) return null;
-
-    const formattedDate = (dateString) => {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric'
-      });
-    };
-
-    const getModalHeader = () => {
-      switch (reviewMode) {
-        case 'review':
-          return 'Review Application';
-        case 'view':
-          return 'Application Details';
-        case 'history':
-          return 'Review History';
-        default:
-          return 'Application';
-      }
-    };
-
-    const renderReviewActions = () => {
-      if (application.status !== 'pending' || reviewMode !== 'review') return null;
-
-      return (
-        <div className="space-y-4 mt-6 border-t pt-4">
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Review Comments</label>
-            <textarea
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              rows="4"
-              value={reviewComment}
-              onChange={(e) => setReviewComment(e.target.value)}
-              placeholder="Enter your detailed review comments here..."
-            />
-          </div>
-
-          <div className="flex gap-2 justify-end">
-            <button
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium bg-white hover:bg-gray-50"
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button
-              className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 bg-red-100 text-red-700 hover:bg-red-200"
-              onClick={() => handleStatusChange(application.type, application.id, 'rejected')}
-            >
-              <XCircle className="h-4 w-4" />
-              Reject Application
-            </button>
-            <button
-              className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 bg-green-600 text-white hover:bg-green-700"
-              onClick={() => handleStatusChange(application.type, application.id, 'approved')}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Approve Application
-            </button>
-          </div>
-        </div>
-      );
-    };
-
+  // Application Card Component
+  const ApplicationCard = ({ application, onViewDetail }) => {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl">
-          <div className="flex items-center justify-between p-6 border-b">
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              {application.type === 'medicalLeave' ? <Stethoscope className="h-5 w-5 text-blue-600" /> :
-               application.type === 'sponsorship' ? <DollarSign className="h-5 w-5 text-green-600" /> :
-               <Building className="h-5 w-5 text-purple-600" />}
-              {getModalHeader()}
-            </h2>
-            <div className="flex items-center gap-3">
+      <div className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md transition-all duration-200 hover:border-gray-300">
+        <div className="flex flex-col lg:flex-row justify-between gap-6">
+          <div className="flex-1 space-y-4">
+            {/* Header */}
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center">
+                {getTypeIcon(application.type)}
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900">{application.userName}</h3>
+                <p className="text-sm text-gray-600">{application.userEmail}</p>
+              </div>
+            </div>
+
+            {/* Badges */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm font-medium rounded-full border">
+                {application.category}
+              </span>
               {getStatusBadge(application.status)}
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-              </button>
+              {getPriorityBadge(application.priority)}
+            </div>
+
+            {/* Meta Info */}
+            <div className="flex items-center gap-4 text-sm text-gray-500">
+              <div className="flex items-center gap-1">
+                <Calendar className="w-4 h-4" />
+                <span>Submitted {formatDate(application.createdAt)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <FileText className="w-4 h-4" />
+                <span>ID: {application.id}</span>
+              </div>
             </div>
           </div>
-          
-          {/* Navigation tabs */}
-          <div className="flex border-b">
-            <button 
-              className={`px-4 py-3 font-medium text-sm flex-1 text-center ${reviewMode === 'view' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}
-              onClick={() => setReviewMode('view')}
+
+          {/* Actions */}
+          <div className="flex flex-col gap-2 min-w-[200px]">
+            <button
+              onClick={() => onViewDetail(application)}
+              className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors duration-200"
             >
-              Application Details
+              <Eye className="w-4 h-4" />
+              View Details
             </button>
+
             {application.status === 'pending' && (
-              <button 
-                className={`px-4 py-3 font-medium text-sm flex-1 text-center ${reviewMode === 'review' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}
-                onClick={() => setReviewMode('review')}
-              >
-                Review & Decision
-              </button>
-            )}
-            {application.status !== 'pending' && (
-              <button 
-                className={`px-4 py-3 font-medium text-sm flex-1 text-center ${reviewMode === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}
-                onClick={() => setReviewMode('history')}
-              >
-                Review History
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={(e) => handleQuickAction(application, 'approve', e)}
+                  disabled={processing}
+                  className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors duration-200 disabled:opacity-50 flex-1"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Approve
+                </button>
+                <button
+                  onClick={(e) => handleQuickAction(application, 'reject', e)}
+                  disabled={processing}
+                  className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 border border-red-600 rounded-lg hover:bg-red-700 transition-colors duration-200 disabled:opacity-50 flex-1"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Reject
+                </button>
+              </div>
             )}
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Add function to handle application deletion
+  const handleDeleteApplication = async (application) => {
+    if (!user || !application) return;
+    
+    // Check if user has permission to delete
+    if (!isAdmin && application.status !== 'rejected') {
+      toast.error('You do not have permission to delete this application');
+      return;
+    }
+
+    try {
+      setProcessing(true);
+
+      // Delete the application first
+      try {
+        await remove(ref(database, `applications/${application.category}/${application.id}`));
+      } catch (error) {
+        console.error('Error deleting application:', error);
+        toast.error('Failed to delete application');
+        return;
+      }
+
+      // Delete user notifications
+      try {
+        const userNotificationsRef = ref(database, `notifications/users/${application.userId}`);
+        const userNotificationsSnapshot = await get(userNotificationsRef);
+        
+        if (userNotificationsSnapshot.exists()) {
+          const notifications = userNotificationsSnapshot.val();
+          const deletePromises = Object.entries(notifications)
+            .filter(([_, notification]) => notification.applicationId === application.id)
+            .map(([key, _]) => 
+              remove(ref(database, `notifications/users/${application.userId}/${key}`))
+            );
           
-          <div className="p-6">
-            {reviewMode === 'view' && (
-              <div className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500">Basic Information</h3>
-                      <div className="mt-2 bg-gray-50 p-4 rounded-lg space-y-2">
-                        {application.type === 'medicalLeave' && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Student</span>
-                              <span className="text-sm">{application.studentName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Student ID</span>
-                              <span className="text-sm">{application.studentId}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Reason</span>
-                              <span className="text-sm">{application.reason}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Duration</span>
-                              <span className="text-sm">{formattedDate(application.startDate)} to {formattedDate(application.endDate)}</span>
-                            </div>
-                          </>
-                        )}
-                        {application.type === 'sponsorship' && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Student</span>
-                              <span className="text-sm">{application.studentName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Student ID</span>
-                              <span className="text-sm">{application.studentId}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Event</span>
-                              <span className="text-sm">{application.eventName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Amount</span>
-                              <span className="text-sm font-semibold">${application.amount.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Purpose</span>
-                              <span className="text-sm">{application.purpose}</span>
-                            </div>
-                          </>
-                        )}
-                        {application.type === 'eventPermission' && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Organizer</span>
-                              <span className="text-sm">{application.organizerName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Event</span>
-                              <span className="text-sm">{application.eventName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Date</span>
-                              <span className="text-sm">{formattedDate(application.date)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Venue</span>
-                              <span className="text-sm">{application.venue}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">Expected Attendees</span>
-                              <span className="text-sm">{application.expectedAttendees}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500">Meta Information</h3>
-                      <div className="mt-2 bg-gray-50 p-4 rounded-lg space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-sm font-medium">Application ID</span>
-                          <span className="text-sm font-mono">{application.id}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm font-medium">Submission Date</span>
-                          <span className="text-sm">{formattedDate(application.submittedAt)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm font-medium">Urgency</span>
-                          <span className="text-sm">{application.urgency.charAt(0).toUpperCase() + application.urgency.slice(1)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm font-medium">Status</span>
-                          <span className="text-sm">{application.status.charAt(0).toUpperCase() + application.status.slice(1)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500">Details</h3>
-                      <div className="mt-2 bg-gray-50 p-4 rounded-lg">
-                        <p className="text-sm whitespace-pre-wrap">{application.details}</p>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500">Supporting Documents</h3>
-                      <div className="mt-2 space-y-2">
-                        {application.documents.map((doc, index) => (
-                          <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-blue-600" />
-                              <span className="text-sm">{doc}</span>
-                            </div>
-                            <button className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1">
-                              <Download className="h-4 w-4" />
-                              View
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+          await Promise.all(deletePromises);
+        }
+      } catch (error) {
+        console.error('Error deleting user notifications:', error);
+        // Continue with the process even if notification deletion fails
+      }
+
+      // Delete admin notifications
+      if (isAdmin) {
+        try {
+          const adminNotificationsRef = ref(database, 'notifications/admin');
+          const adminNotificationsSnapshot = await get(adminNotificationsRef);
+          
+          if (adminNotificationsSnapshot.exists()) {
+            const notifications = adminNotificationsSnapshot.val();
+            const deletePromises = Object.entries(notifications)
+              .filter(([_, notification]) => notification.applicationId === application.id)
+              .map(([key, _]) => 
+                remove(ref(database, `notifications/admin/${key}`))
+              );
+            
+            await Promise.all(deletePromises);
+          }
+        } catch (error) {
+          console.error('Error deleting admin notifications:', error);
+          // Continue with the process even if notification deletion fails
+        }
+      }
+
+      // Create deletion notification
+      try {
+        const timestamp = new Date().toISOString();
+        const notificationData = {
+          type: 'application_deleted',
+          applicationId: application.id,
+          title: 'Application Deleted',
+          message: isAdmin 
+            ? `Your ${application.type} application has been deleted by an administrator.`
+            : `Your rejected ${application.type} application has been deleted.`,
+          status: 'unread',
+          createdAt: timestamp,
+          actionBy: {
+            uid: user.uid,
+            name: user.displayName || user.email,
+            role: isAdmin ? 'admin' : 'user'
+          }
+        };
+
+        await push(ref(database, `notifications/users/${application.userId}`), notificationData);
+      } catch (error) {
+        console.error('Error creating deletion notification:', error);
+        // Continue with the process even if notification creation fails
+      }
+
+      toast.success('Application deleted successfully');
+      setViewDetails(null);
+
+      // Update local state
+      setApplications(prevApplications => 
+        prevApplications.filter(app => app.id !== application.id)
+      );
+      
+      // Update stats
+      updateStats(applications.filter(app => app.id !== application.id));
+
+    } catch (error) {
+      console.error('Error deleting application:', error);
+      toast.error('Failed to delete application');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Main render
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-indigo-200 rounded-full animate-spin"></div>
+            <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-xl font-semibold text-gray-800">Loading Applications</p>
+            <p className="text-gray-600">Please wait while we fetch the latest data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+  return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto" />
+            <div className="space-y-2">
+            <p className="text-xl font-semibold text-gray-800">Authentication Required</p>
+            <p className="text-gray-600">Please log in to access the application management system.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50">
+      <div className="container mx-auto max-w-7xl p-6 space-y-8">
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+            <div className="space-y-3">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                Application Management Dashboard
+              </h1>
+              <p className="text-lg text-gray-600">
+                Review and manage student applications with advanced tools
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              {isAdmin && (
+                <div className="flex items-center gap-2 bg-green-100 text-green-800 px-4 py-2 rounded-full">
+                  <Shield className="w-4 h-4" />
+                  <span>Admin Access</span>
                 </div>
-                
-                {application.status === 'pending' && (
-                  <div className="flex justify-end mt-4">
-                    <button
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium flex items-center gap-2 hover:bg-blue-700"
-                      onClick={() => setReviewMode('review')}
-                    >
-                      Proceed to Review
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
+              )}
+              <div className="bg-indigo-50 px-4 py-2 rounded-full border border-indigo-200">
+                <span className="text-indigo-700 font-medium">
+                  {stats.pending} Pending Reviews
+                </span>
+              </div>
+              <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-md">
+                <Bell className="w-4 h-4" />
+                Notifications
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Statistics Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+          <StatsCard
+            title="Total Applications"
+            value={stats.total}
+            icon={<FileText />}
+            description="All submissions"
+            color="blue"
+          />
+          <StatsCard
+            title="Pending"
+            value={stats.pending}
+            icon={<Clock />}
+            description="Awaiting review"
+            color="yellow"
+          />
+          <StatsCard
+            title="Approved"
+            value={stats.approved}
+            icon={<CheckCircle2 />}
+            description="Successfully approved"
+            color="green"
+          />
+          <StatsCard
+            title="Rejected"
+            value={stats.rejected}
+            icon={<XCircle />}
+            description="Not approved"
+            color="red"
+          />
+          <StatsCard
+            title="Urgent"
+            value={stats.urgent}
+            icon={<AlertCircle />}
+            description="High priority"
+            color="red"
+          />
+          <StatsCard
+            title="Today"
+            value={stats.today}
+            icon={<Calendar />}
+            description="New submissions"
+            color="indigo"
+          />
+        </div>
+
+        {/* Main Content */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+          {/* Header */}
+          <div className="bg-gray-50 border-b border-gray-200 p-6">
+            <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
+              <h2 className="text-2xl font-bold text-gray-900">Application Requests</h2>
+              <div className="w-full lg:w-auto max-w-md">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, or category..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <nav className="flex">
+              {[
+                { key: 'all', label: 'All', count: applications.length },
+                { key: 'pending', label: 'Pending', count: stats.pending },
+                { key: 'approved', label: 'Approved', count: stats.approved },
+                { key: 'rejected', label: 'Rejected', count: stats.rejected }
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`flex-1 px-6 py-4 text-sm font-medium border-b-2 transition-colors duration-200 ${
+                    activeTab === tab.key
+                      ? 'border-blue-500 text-blue-600 bg-blue-50'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Content */}
+          <div className="p-6">
+            {filteredApplications.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="bg-gray-100 rounded-full w-24 h-24 mx-auto mb-6 flex items-center justify-center">
+                  <FileText className="w-12 h-12 text-gray-400" />
+                    </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No applications found</h3>
+                    <p className="text-gray-600 max-w-md mx-auto">
+                  Try adjusting your search criteria or check back later for new submissions.
+                    </p>
+                  </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredApplications.map((app) => (
+                  <ApplicationCard
+                    key={app.id}
+                    application={app}
+                    onViewDetail={(application) => {
+                      setSelectedApp(application);
+                      setViewDetails(application);
+                    }}
+                  />
+                ))}
                   </div>
                 )}
               </div>
-            )}
-            
-            {reviewMode === 'review' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700">Application Summary</h3>
-                  <div className="mt-2 bg-blue-50 p-4 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      {application.type === 'medicalLeave' 
-                        ? `${application.studentName} is requesting a medical leave from ${formattedDate(application.startDate)} to ${formattedDate(application.endDate)} due to ${application.reason}.` 
-                        : application.type === 'sponsorship'
-                        ? `${application.studentName} is requesting ${application.amount.toLocaleString()} for ${application.eventName}. Purpose: ${application.purpose}.`
-                        : `${application.organizerName} is requesting permission for ${application.eventName} at ${application.venue} on ${formattedDate(application.date)} with ${application.expectedAttendees} expected attendees.`
-                      }
-                    </p>
-                  </div>
+        </div>
+
+        {/* Application Details Modal */}
+        {viewDetails && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+              {/* Modal Header */}
+              <div className="sticky top-0 z-10 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-gray-200 p-6">
+              <div className="flex justify-between items-start">
+                <div className="space-y-2">
+                    <h2 className="text-2xl font-bold text-gray-900">Application Details</h2>
+                    <p className="text-gray-600">Review application information and make your decision</p>
                 </div>
-                
-                {renderReviewActions()}
+                  <div className="flex items-center gap-3">
+                    {getStatusBadge(viewDetails.status)}
+                    {getPriorityBadge(viewDetails.priority)}
+                    <button
+                      onClick={() => setViewDetails(null)}
+                      className="text-gray-400 hover:text-gray-600 p-1"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                </div>
               </div>
-            )}
-            
-            {reviewMode === 'history' && (
-              <div className="space-y-4">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    {application.status === 'approved' 
-                      ? <CheckCircle2 className="h-5 w-5 text-green-600" />
-                      : <XCircle className="h-5 w-5 text-red-600" />
-                    }
-                    <h3 className="font-medium">
-                      Application {application.status === 'approved' ? 'Approved' : 'Rejected'}
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 space-y-6">
+                {/* Student Information */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4 flex items-center gap-2">
+                      <UserCircle className="w-5 h-5" />
+                      Student Information
                     </h3>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-blue-600">Full Name</p>
+                        <p className="text-lg font-semibold text-gray-900">{viewDetails.userName}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-blue-600">Email Address</p>
+                        <p className="text-lg font-semibold text-gray-900">{viewDetails.userEmail}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-blue-600">Application ID</p>
+                        <p className="text-sm font-mono bg-white px-2 py-1 rounded border">{viewDetails.id}</p>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-sm mb-2">Review comment:</p>
-                  <p className="text-sm bg-white p-3 rounded border">
-                    {application.reviewComment || "No comments provided."}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Reviewed on {formattedDate(application.reviewedAt || new Date())}
-                  </p>
+
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-purple-800 mb-4 flex items-center gap-2">
+                      <FileText className="w-5 h-5" />
+                      Application Details
+                    </h3>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-purple-600">Category</p>
+                        <p className="text-lg font-semibold text-gray-900">{viewDetails.category}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-purple-600">Submission Date</p>
+                        <p className="text-lg font-semibold text-gray-900">{formatDate(viewDetails.createdAt)}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-purple-600">Priority Level</p>
+                        <div className="mt-1">{getPriorityBadge(viewDetails.priority)}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Application Content */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5" />
+                    Application Content
+                  </h3>
+                    <div className="space-y-4">
+                        <div>
+                      <p className="text-sm font-medium text-gray-600 mb-2">Description</p>
+                      <div className="bg-white p-4 rounded-lg border">
+                        <p className="text-gray-900 whitespace-pre-wrap">{viewDetails.description}</p>
+                          </div>
+                        </div>
+                    {viewDetails.additionalInfo && (
+                        <div>
+                        <p className="text-sm font-medium text-gray-600 mb-2">Additional Information</p>
+                        <div className="bg-white p-4 rounded-lg border">
+                          <p className="text-gray-900 whitespace-pre-wrap">{viewDetails.additionalInfo}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                {/* Review Section */}
+                {viewDetails.status === 'pending' && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                      <Sparkles className="w-5 h-5" />
+                      Review & Decision
+                    </h3>
+                    
+                    <div className="space-y-6">
+                      <div>
+                        <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
+                          Add Comment (Optional)
+                        </label>
+                        <textarea
+                          id="comment"
+                          placeholder="Add your review comments here..."
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                          rows="4"
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        <button
+                          onClick={() => handleAction(viewDetails, 'approve')}
+                          disabled={processing}
+                          className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {processing ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-5 h-5" />
+                              Approve Application
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleAction(viewDetails, 'reject')}
+                          disabled={processing}
+                          className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {processing ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-5 h-5" />
+                              Reject Application
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Admin Response Section */}
+                {viewDetails.adminResponse && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4 flex items-center gap-2">
+                      <MessageSquare className="w-5 h-5" />
+                      Admin Response
+                    </h3>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-blue-600">Reviewed By</p>
+                          <p className="text-gray-900 font-semibold">
+                            {viewDetails.adminResponse?.reviewedBy?.name || 'Admin'}
+                          </p>
+                          <p className="text-gray-600 text-sm">
+                            {viewDetails.adminResponse?.reviewedBy?.email || 'No email provided'}
+                            </p>
+                          </div>
+                        <div>
+                          <p className="text-sm font-medium text-blue-600">Review Date</p>
+                          <p className="text-gray-900 font-semibold">
+                            {viewDetails.adminResponse?.reviewedAt ? formatDate(viewDetails.adminResponse.reviewedAt) : 'Not available'}
+                          </p>
+                        </div>
+                      </div>
+                      {viewDetails.adminResponse?.comment && (
+                        <div>
+                          <p className="text-sm font-medium text-blue-600 mb-2">Review Comment</p>
+                          <div className="bg-white p-4 rounded-lg border">
+                            <p className="text-gray-900">{viewDetails.adminResponse.comment}</p>
+                    </div>
+                  </div>
+                )}
+                    </div>
               </div>
             )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Statistics Cards Component
-  const StatisticsCards = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <div className="bg-white rounded-lg shadow p-4 border-l-4 border-l-blue-500">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600">Total Applications</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-          </div>
-          <div className="p-3 bg-blue-50 rounded-full">
-            <FileText className="h-6 w-6 text-blue-500" />
-          </div>
-        </div>
-        <div className="mt-2 flex items-center text-sm text-blue-600">
-          <TrendingUp className="h-4 w-4 mr-1" />
-          <span>12% increase from last month</span>
-        </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-4 border-l-4 border-l-yellow-500">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600">Pending Applications</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
-          </div>
-          <div className="p-3 bg-yellow-50 rounded-full">
-            <Clock className="h-6 w-6 text-yellow-500" />
-          </div>
-        </div>
-        <div className="mt-2 flex items-center text-sm text-yellow-600">
-          <AlertCircle className="h-4 w-4 mr-1" />
-          <span>{stats.urgentApplications} require immediate attention</span>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-4 border-l-4 border-l-green-500">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600">Approval Rate</p>
-            <p className="text-2xl font-bold text-gray-900">
-              {stats.total ? Math.round((stats.approved / stats.total) * 100) : 0}%
-            </p>
-          </div>
-          <div className="p-3 bg-green-50 rounded-full">
-            <CheckCircle2 className="h-6 w-6 text-green-500" />
-          </div>
-        </div>
-        <div className="mt-2 flex items-center text-sm text-green-600">
-          <Activity className="h-4 w-4 mr-1" />
-          <span>Avg. processing time: {stats.averageProcessingTime}</span>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-4 border-l-4 border-l-purple-500">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600">Active Reviewers</p>
-            <p className="text-2xl font-bold text-gray-900">8</p>
-          </div>
-          <div className="p-3 bg-purple-50 rounded-full">
-            <Users className="h-6 w-6 text-purple-500" />
-          </div>
-        </div>
-        <div className="mt-2 flex items-center text-sm text-purple-600">
-          <BarChart2 className="h-4 w-4 mr-1" />
-          <span>Processing 15 applications/hour</span>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Charts Component
-  const AnalyticsCharts = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-      <div className="bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <BarChart2 className="h-5 w-5 text-blue-500" />
-          Application Trends
-        </h3>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip />
-              <Area 
-                type="monotone" 
-                dataKey="applications" 
-                stroke="#3B82F6" 
-                fill="#3B82F6" 
-                fillOpacity={0.2} 
-              />
-              <Area 
-                type="monotone" 
-                dataKey="approvals" 
-                stroke="#10B981" 
-                fill="#10B981" 
-                fillOpacity={0.2} 
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <PieChart className="h-5 w-5 text-purple-500" />
-          Application Distribution
-        </h3>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <RechartsPieChart>
-              <Pie
-                data={typeData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {typeData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </RechartsPieChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center gap-4 mt-4">
-            {typeData.map((item, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="text-sm">{item.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Application Management</h1>
-          <p className="mt-1 text-gray-600">Review and process student applications and requests</p>
-        </div>
-
-        {/* Statistics Cards */}
-        <StatisticsCards />
-
-        {/* Analytics Charts */}
-        <AnalyticsCharts />
-        
-        <div className="bg-white rounded-lg shadow">
-          <div className="p-4 sm:p-6 border-b">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-              <div className="flex space-x-1">
-                <button
-                  className={`px-4 py-2 text-sm font-medium rounded-l-md ${currentTab === 'medicalLeave' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                  onClick={() => {
-                    setCurrentTab('medicalLeave');
-                    setFilterStatus('all');
-                    setSearchTerm('');
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <Stethoscope className="h-4 w-4" />
-                    <span>Medical Leave</span>
-                  </div>
-                </button>
-                <button
-                  className={`px-4 py-2 text-sm font-medium ${currentTab === 'sponsorship' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                  onClick={() => {
-                    setCurrentTab('sponsorship');
-                    setFilterStatus('all');
-                    setSearchTerm('');
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="h-4 w-4" />
-                    <span>Sponsorship</span>
-                  </div>
-                </button>
-                <button
-                  className={`px-4 py-2 text-sm font-medium rounded-r-md ${currentTab === 'eventPermission' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                  onClick={() => {
-                    setCurrentTab('eventPermission');
-                    setFilterStatus('all');
-                    setSearchTerm('');
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <Building className="h-4 w-4" />
-                    <span>Event Permission</span>
-                  </div>
-                </button>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="h-4 w-4 text-gray-400" />
-                  </div>
-                  <input
-                    type="text"
-                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="Search applications..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-                
-                <div className="relative">
-                  <select
-                    className="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
+              {/* Modal Footer */}
+              <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-4">
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setViewDetails(null)}
+                    className="px-6 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
                   >
-                    <option value="all">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                    <Filter className="h-4 w-4 text-gray-400" />
-                  </div>
+                    Close
+                  </button>
+                  {(isAdmin || viewDetails.status === 'rejected') && (
+                    <Button 
+                      variant="destructive" 
+                      onClick={() => {
+                        const message = isAdmin 
+                          ? 'Are you sure you want to delete this application? This action cannot be undone.'
+                          : 'Are you sure you want to delete this rejected application? This action cannot be undone.';
+                        if (window.confirm(message)) {
+                          handleDeleteApplication(viewDetails);
+                        }
+                      }}
+                      className="mr-2"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete {viewDetails.status === 'rejected' ? 'Rejected ' : ''}Application
+                    </Button>
+                  )}
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+                    <Download className="h-4 w-4 mr-2" />
+                    Download All Documents
+                  </Button>
                 </div>
               </div>
             </div>
           </div>
+        )}
 
-          <div className="p-4 sm:p-6">
-            {filteredApplications.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
-                  <FileText className="h-8 w-8 text-gray-400" />
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No applications found</h3>
-                <p className="text-gray-500">
-                  {searchTerm 
-                    ? "No applications match your search criteria."
-                    : filterStatus !== 'all'
-                    ? `No ${filterStatus} applications available.`
-                    : "No applications available at the moment."}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredApplications.map(app => (
-                  <ApplicationCard key={app.id} application={app} type={currentTab} />
-                ))}
-              </div>
-            )}
+        {/* Processing Overlay */}
+        {processing && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-8 shadow-2xl text-center space-y-4">
+              <div className="relative mx-auto w-16 h-16">
+                <div className="w-16 h-16 border-4 border-blue-200 rounded-full animate-spin"></div>
+                <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+          </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Processing Request</h3>
+                <p className="text-gray-600">Please wait while we update the application...</p>
           </div>
         </div>
+          </div>
+        )}
       </div>
-
-      {selectedApplication && (
-        <ApplicationReviewModal
-          application={selectedApplication}
-          onClose={() => {
-            setSelectedApplication(null);
-            setReviewComment('');
-            setReviewMode('view');
-          }}
-        />
-      )}
     </div>
   );
 };

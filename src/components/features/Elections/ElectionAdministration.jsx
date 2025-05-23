@@ -14,9 +14,12 @@ import {
   AlertCircle,
   Award,
   TrendingUp,
-  ClipboardList
+  ClipboardList,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getDatabase, ref, onValue, update, push } from 'firebase/database';
+import { toast } from 'react-hot-toast';
 
 const ElectionAdministration = () => {
   const [activeTab, setActiveTab] = useState('applications');
@@ -34,26 +37,35 @@ const ElectionAdministration = () => {
     eligibleYears: [],
     positions: []
   });
+  const [isLoadingApplications, setIsLoadingApplications] = useState(true);
 
-  // Simulated data - replace with actual API calls
+  // Fetch applications from Firebase
   useEffect(() => {
-    // Fetch applications
-    setApplications([
-      {
-        id: 1,
-        name: 'Sarah Johnson',
-        studentId: 'ST12345',
-        position: 'Student Council President',
-        email: 'sarah.j@college.edu',
-        status: 'pending',
-        appliedDate: '2024-03-01',
-        manifesto: 'Building a more inclusive campus...',
-        experience: '2 years as Class Representative'
-      },
-      // Add more sample applications
-    ]);
+    const database = getDatabase();
+    const applicationsRef = ref(database, 'election_candidates');
 
-    // Fetch elections
+    const unsubscribe = onValue(applicationsRef, (snapshot) => {
+      const data = snapshot.val();
+      const loadedApplications = [];
+      if (data) {
+        for (const key in data) {
+          loadedApplications.push({
+            id: key,
+            ...data[key]
+          });
+        }
+      }
+      // Sort applications by creation date, newest first
+      loadedApplications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setApplications(loadedApplications);
+      setIsLoadingApplications(false);
+    }, (error) => {
+      console.error('Error fetching candidate applications:', error);
+      toast.error('Failed to fetch applications.');
+      setIsLoadingApplications(false);
+    });
+
+    // Fetch elections (using mock data for now)
     setElections([
       {
         id: 1,
@@ -67,28 +79,67 @@ const ElectionAdministration = () => {
       },
       // Add more sample elections
     ]);
-  }, []);
 
-  const handleApplicationAction = (applicationId, action) => {
-    setApplications(applications.map(app => {
-      if (app.id === applicationId) {
-        return { ...app, status: action };
-      }
-      return app;
-    }));
-    // In real application, make API call to update status
+    return () => {
+      // Unsubscribe from Firebase listener on cleanup
+      unsubscribe();
+    };
+  }, []); // Empty dependency array means this effect runs once on mount
+
+  const handleApplicationAction = async (applicationId, studentId, action) => {
+    const database = getDatabase();
+    const applicationRef = ref(database, `election_candidates/${applicationId}`);
+    const studentNotificationsRef = ref(database, `users/${studentId}/notifications`);
+
+    try {
+      // Update application status
+      await update(applicationRef, { status: action });
+
+      // Create notification for the student
+      const notificationMessage = action === 'approved'
+        ? 'Your candidate application has been approved!'
+        : 'Your candidate application has been rejected.';
+
+      await push(studentNotificationsRef, {
+        type: 'election_application_status',
+        applicationId: applicationId,
+        status: action,
+        message: notificationMessage,
+        timestamp: new Date().toISOString(),
+        read: false,
+      });
+
+      toast.success(`Application ${action} successfully. Student notified.`);
+    } catch (error) {
+      console.error(`Error updating application status or sending notification (${action}):`, error);
+      toast.error(`Failed to ${action} application.`);
+    }
   };
 
   const handleCreateElection = (e) => {
     e.preventDefault();
     // Add validation and API call
     setElections([...elections, { ...newElection, id: elections.length + 1, status: 'upcoming' }]);
+    toast.success(`${newElection.title} has been scheduled.`);
     setShowNewElectionModal(false);
+    setNewElection({
+      title: '',
+      startDate: '',
+      endDate: '',
+      description: '',
+      eligibleYears: [],
+      positions: []
+    });
   };
 
+  // Filter applications based on search term and status
   const filteredApplications = applications.filter(app => {
-    const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         app.studentId.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (
+      app.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.studentId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      app.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
     const matchesFilter = filterStatus === 'all' || app.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -138,6 +189,7 @@ const ElectionAdministration = () => {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm text-gray-500">Active Elections</p>
+                  {/* Filter elections by status */}
                   <h3 className="text-2xl font-bold text-gray-900">
                     {elections.filter(e => e.status === 'active').length}
                   </h3>
@@ -155,6 +207,7 @@ const ElectionAdministration = () => {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm text-gray-500">Upcoming Elections</p>
+                  {/* Filter elections by status */}
                   <h3 className="text-2xl font-bold text-gray-900">
                     {elections.filter(e => e.status === 'upcoming').length}
                   </h3>
@@ -178,6 +231,12 @@ const ElectionAdministration = () => {
               >
                 <ClipboardList className="h-5 w-5 mr-2" />
                 Candidate Applications
+                {/* Display pending count */}
+                {applications.filter(app => app.status === 'pending').length > 0 && (
+                  <span className="ml-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                    {applications.filter(app => app.status === 'pending').length}
+                  </span>
+                )}
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -232,78 +291,93 @@ const ElectionAdministration = () => {
                   </div>
 
                   <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Candidate
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Position
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Applied Date
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Status
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredApplications.map((application) => (
-                          <tr key={application.id}>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                <div>
-                                  <div className="text-sm font-medium text-gray-900">{application.name}</div>
-                                  <div className="text-sm text-gray-500">{application.email}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">{application.position}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">{application.appliedDate}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                ${application.status === 'approved' ? 'bg-green-100 text-green-800' : 
-                                  application.status === 'rejected' ? 'bg-red-100 text-red-800' : 
-                                  'bg-yellow-100 text-yellow-800'}`}
-                              >
-                                {application.status.charAt(0).toUpperCase() + application.status.slice(1)}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              {application.status === 'pending' && (
-                                <div className="flex space-x-2">
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    onClick={() => handleApplicationAction(application.id, 'approved')}
-                                    className="text-green-600 hover:text-green-900"
-                                  >
-                                    <CheckCircle className="h-5 w-5" />
-                                  </motion.button>
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    onClick={() => handleApplicationAction(application.id, 'rejected')}
-                                    className="text-red-600 hover:text-red-900"
-                                  >
-                                    <XCircle className="h-5 w-5" />
-                                  </motion.button>
-                                </div>
-                              )}
-                            </td>
+                    {isLoadingApplications ? (
+                      <div className="p-8 text-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
+                        <p className="mt-4 text-gray-600">Loading applications...</p>
+                      </div>
+                    ) : filteredApplications.length > 0 ? (
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Candidate
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Position
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Applied Date
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Status
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Actions
+                            </th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {filteredApplications.map((application) => (
+                            <tr key={application.id}>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-900">{application.name}</div>
+                                    <div className="text-sm text-gray-500">{application.email}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">{application.position}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">{application.appliedDate ? new Date(application.appliedDate).toLocaleDateString() : 'N/A'}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                  ${application.status === 'approved' ? 'bg-green-100 text-green-800' : 
+                                    application.status === 'rejected' ? 'bg-red-100 text-red-800' : 
+                                    'bg-yellow-100 text-yellow-800'}`}
+                                >
+                                  {application.status?.charAt(0).toUpperCase() + application.status?.slice(1)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                {application.status === 'pending' && (
+                                  <div className="flex space-x-2">
+                                    <motion.button
+                                      whileHover={{ scale: 1.1 }}
+                                      whileTap={{ scale: 0.9 }}
+                                      onClick={() => handleApplicationAction(application.id, application.studentId, 'approved')}
+                                      className="text-green-600 hover:text-green-900"
+                                    >
+                                      <CheckCircle className="h-5 w-5" />
+                                      <span className="sr-only">Approve</span>
+                                    </motion.button>
+                                    <motion.button
+                                      whileHover={{ scale: 1.1 }}
+                                      whileTap={{ scale: 0.9 }}
+                                      onClick={() => handleApplicationAction(application.id, application.studentId, 'rejected')}
+                                      className="text-red-600 hover:text-red-900"
+                                    >
+                                      <XCircle className="h-5 w-5" />
+                                      <span className="sr-only">Reject</span>
+                                    </motion.button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                       <div className="p-8 text-center text-gray-500">
+                          <ClipboardList className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                          <p className="font-medium text-lg">No Applications Found</p>
+                          <p className="text-sm">There are no candidate applications matching your criteria.</p>
+                        </div>
+                    )}
                   </div>
                 </div>
               )}

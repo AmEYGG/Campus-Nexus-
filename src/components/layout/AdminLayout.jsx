@@ -49,10 +49,7 @@ const AdminLayout = () => {
   ];
 
   const utilityNavItems = [
-    { id: 'notifications', icon: <Bell size={20} />, label: 'Notifications', link: '/admin/notifications' },
-    { id: 'profile', icon: <User size={20} />, label: 'Profile', link: '/admin/profile' },
-    { id: 'settings', icon: <Settings size={20} />, label: 'Settings', link: '/admin/settings' },
-    { id: 'logout', icon: <LogOut size={20} />, label: 'Log Out', onClick: handleLogout }
+      { id: 'logout', icon: <LogOut size={20} />, label: 'Log Out', onClick: handleLogout }
   ];
 
   return (

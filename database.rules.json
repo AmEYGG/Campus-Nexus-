@@ -1,111 +1,37 @@
 {
   "rules": {
     ".read": "auth != null",
-    ".write": false,
-    "complaintRequests": {
-      ".indexOn": ["studentId", "status", "submittedAt"],
-      ".read": "auth != null",
-      "$complaintId": {
-        ".read": "auth != null && (data.child('studentId').val() === auth.uid || root.child('faculty').child(auth.uid).exists() || root.child('admins').child(auth.uid).exists())",
-        ".write": "auth != null && ((!data.exists() && newData.child('studentId').val() === auth.uid) || (data.exists() && (data.child('studentId').val() === auth.uid || root.child('faculty').child(auth.uid).exists() || root.child('admins').child(auth.uid).exists())))"
-      }
-    },
-    "budget_requests": {
-      ".indexOn": ["studentId", "userId", "status", "createdAt"],
-      "$request_id": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
+    ".write": "auth != null",
     "notifications": {
-      ".indexOn": ["studentId", "createdAt", "status"],
-      ".read": "auth != null",
-      "$notificationId": {
-        ".read": "auth != null",
-        ".write": "auth != null && ((!data.exists()) || (data.exists() && (data.child('studentId').val() === auth.uid || root.child('faculty').child(auth.uid).exists() || root.child('admins').child(auth.uid).exists())))"
-      }
-    },
-    "facility_bookings": {
-      ".indexOn": ["studentId"],
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "applications": {
-      ".indexOn": ["studentId"],
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "feedback": {
-      ".indexOn": ["studentId"],
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "facilityBookingRequests": {
-      ".indexOn": "userId",
+      ".indexOn": ["userId", "createdAt", "status"],
       ".read": "auth != null",
       ".write": "auth != null",
-      "$booking_id": {
-        ".validate": "newData.hasChildren(['userId', 'status', 'createdAt'])",
-        "userId": {
-          ".validate": "newData.isString()"
-        },
-        "status": {
-          ".validate": "newData.isString() && (newData.val() === 'pending' || newData.val() === 'approved' || newData.val() === 'rejected')"
-        }
-      }
-    },
-    "facility-booking-requests": {
-      ".indexOn": ["userId", "status", "createdAt", "recipient"],
-      "$booking_id": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "facilities": {
-      ".read": true,
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'"
-    },
-    "election_candidates": {
-      ".indexOn": ["status"],
-      "$candidate_id": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "votes": {
-      "$electionId": {
-        ".indexOn": ["candidateId", "timestamp"]
+      "$notificationId": {
+        ".validate": "newData.hasChildren(['message', 'createdAt', 'userId'])"
       }
     },
     "users": {
       "$userId": {
         ".read": "auth != null && $userId === auth.uid",
         ".write": "auth != null && $userId === auth.uid",
-        "complaints": {
-          ".read": "auth != null && $userId === auth.uid",
-          ".write": "auth != null && $userId === auth.uid",
-          "$complaintId": {
-            ".validate": "newData.hasChildren(['id', 'status', 'submittedAt'])"
-          }
-        },
         "notifications": {
+          ".indexOn": ["createdAt", "read"],
           ".read": "auth != null && $userId === auth.uid",
-          ".write": "auth != null && $userId === auth.uid",
-          "$notificationId": {
-            ".validate": "newData.hasChildren(['type', 'message', 'createdAt'])"
-          }
+          ".write": "auth != null && ($userId === auth.uid || root.child('admins').child(auth.uid).exists())"
         }
       }
     },
-    "faculty": {
-      "$uid": {
-        ".read": "auth != null && ($uid === auth.uid || root.child('admins').child(auth.uid).exists())",
-        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || $uid === auth.uid)"
+    "complaintRequests": {
+      ".indexOn": ["studentId", "status", "createdAt"],
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$complaintId": {
+        ".validate": "newData.hasChildren(['studentId', 'status', 'submittedAt'])"
       }
     },
     "admins": {
       "$uid": {
-        ".read": "auth != null && ($uid === auth.uid || root.child('admins').child(auth.uid).exists())",
+        ".read": "auth != null",
         ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
       }
     }
